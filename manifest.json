@@ -1,0 +1,21 @@
+{
+  "name": "Student Organizer",
+  "short_name": "StudyOrg",
+  "description": "Student file manager, converter, and AI study assistant.",
+  "start_url": "./student_organizer.html",
+  "display": "standalone",
+  "background_color": "#f4f7f9",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
