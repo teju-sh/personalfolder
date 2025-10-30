@@ -1,1023 +1,1526 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Student Organizer</title>
+    <!-- 1. Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script type="module">
-        // --- Firebase Imports ---
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, doc, query, where, onSnapshot, addDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // --- Gemini API Configuration ---
-        const GEMINI_API_KEY = ""; // Left blank for Canvas environment
-        const GEMINI_MODEL = "gemini-2.5-flash-preview-09-2025";
-        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-
-
-        // Global Firebase variables
-        // Import the functions you need from the SDKs you need
-        import { initializeApp } from "firebase/app";
-        import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-        const firebaseConfig = {
-            apiKey: "AIzaSyAa4EpAF0CakYdQsbGxurUNXMwRH9W4IcQ",
-            authDomain: "personalfolder-d9ba8.firebaseapp.com",
-            projectId: "personalfolder-d9ba8",
-            storageBucket: "personalfolder-d9ba8.firebasestorage.app",
-            messagingSenderId: "216731617905",
-            appId: "1:216731617905:web:fea13d842d3102f7c229d0",
-            measurementId: "G-GLWFYE1GW0"
-        };
-
-// Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const analytics = getAnalytics(app);
-                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-                let db;
-                let auth;
-                let currentUserId = null;
-        
-        // --- Application State Management ---
-                let folders = [];
-                let allFiles = []; // All files across all folders for the current user
-                let activeReminders = []; // The actual list of reminders from Firestore
-                const alarmedReminders = new Set(); // Tracks which reminders have already triggered the alarm in this session
-                let currentView = { name: 'folders', folderId: null, folderName: null };
-                let audioContext = null;
-                let isAlarming = false; // Flag to prevent overlapping alarm sounds
-
-
-        // --- Core Firebase Initialization and Auth ---
-        document.addEventListener('DOMContentLoaded', async () => {
-            console.log('Initializing Firebase...');
-            if (Object.keys(firebaseConfig).length === 0) {
-                console.error("Firebase config is missing or invalid.");
-                document.getElementById('main-content').innerHTML = '<p class="p-4 text-red-600">Error: Firebase configuration is missing. Cannot initialize database.</p>';
-                return;
-            }
-
-            try {
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                
-                await initializeAuthAndData(auth, db);
-
-                // Setup global event listeners
-                setupListeners();
-                
-                // Initial render of the files section (folders view)
-                renderFoldersSection();
-                
-                // Start periodic alarm check every 60 seconds (60000 ms)
-                // This will call checkReminders() regularly to see if any reminder is overdue.
-                setInterval(checkReminders, 60000);
-
-            } catch (error) {
-                console.error("Firebase initialization failed:", error);
-            }
-        });
-
-        async function initializeAuthAndData(auth, db) {
-            return new Promise((resolve) => {
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        currentUserId = user.uid;
-                        console.log("Authenticated user ID:", currentUserId);
-                        document.getElementById('user-id-display').textContent = `User ID: ${currentUserId.substring(0, 8)}...`;
-                        startRealtimeListeners(db, currentUserId);
-                        resolve();
-                    } else if (initialAuthToken) {
-                        await signInWithCustomToken(auth, initialAuthToken);
-                    } else {
-                        const anonUser = await signInAnonymously(auth);
-                        currentUserId = anonUser.user.uid;
-                        console.log("Signed in anonymously. User ID:", currentUserId);
-                        document.getElementById('user-id-display').textContent = `User ID: ${currentUserId.substring(0, 8)}...`;
-                        startRealtimeListeners(db, currentUserId);
-                        resolve();
-                    }
-                });
-            });
-        }
-
-        function getCollectionPath(collectionName) {
-            if (!currentUserId) return null;
-            // Private data storage
-            return `artifacts/${appId}/users/${currentUserId}/${collectionName}`;
-        }
-        
-        // --- Realtime Data Listeners ---
-        function startRealtimeListeners(db, userId) {
-            // Folders Listener
-            const foldersRef = collection(db, getCollectionPath('folders'));
-            const foldersQuery = query(foldersRef, where('userId', '==', userId));
-            onSnapshot(foldersQuery, (snapshot) => {
-                folders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                
-                // Only render folders if we are on the main folder view
-                if (currentView.name === 'folders') {
-                    renderFolders();
-                }
-                console.log("Folders updated:", folders);
-            }, (error) => {
-                console.error("Error fetching folders:", error);
-            });
-
-            // Files Listener
-            const filesRef = collection(db, getCollectionPath('files'));
-            const filesQuery = query(filesRef, where('userId', '==', userId));
-            onSnapshot(filesQuery, (snapshot) => {
-                allFiles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                // If we are currently inside a folder view, re-render the files
-                if (currentView.name === 'files-in-folder') {
-                    renderFiles(currentView.folderId);
-                }
-                console.log("Files updated:", allFiles);
-            }, (error) => {
-                console.error("Error fetching files:", error);
-            });
-
-            // Reminders Listener
-            const remindersRef = collection(db, getCollectionPath('reminders'));
-            const remindersQuery = query(remindersRef, where('userId', '==', userId));
-            onSnapshot(remindersQuery, (snapshot) => {
-                activeReminders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                renderReminders(activeReminders);
-                checkReminders(); // Check for alarms immediately after data load/change
-                console.log("Reminders updated:", activeReminders);
-            }, (error) => {
-                console.error("Error fetching reminders:", error);
-            });
-        }
-
-        // --- View Management Functions ---
-
-        function goBackToFolders() {
-            currentView = { name: 'folders', folderId: null, folderName: null };
-            renderFoldersSection();
-        }
-
-        function viewFolder(folderId, folderName) {
-            currentView = { name: 'files-in-folder', folderId, folderName };
-            renderFoldersSection();
-        }
-
-        // --- Rendering Functions ---
-        
-        // Renders the file section container based on the current view state
-        function renderFoldersSection() {
-            const section = document.getElementById('folders-section');
-            if (!section) return;
-            section.innerHTML = ''; // Clear everything
-
-            if (currentView.name === 'folders') {
-                // Render main folder list UI (the original state)
-                section.innerHTML = `
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-xl font-bold text-gray-800">My Folders</h2>
-                        <button id="create-folder-btn" class="px-4 py-2 bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-md hover:bg-indigo-600 transition duration-150 flex items-center">
-                            <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1a9 9 0 100 18A9 9 0 003 3z"></path></svg>
-                            New Folder
-                        </button>
-                    </div>
-                    <div id="folder-list" class="space-y-3">
-                        <!-- Folders rendered here by renderFolders() -->
-                        <p class="text-center text-gray-400">Loading folders...</p>
-                    </div>
-                `;
-                // Re-attach listener for create folder button
-                document.getElementById('create-folder-btn').addEventListener('click', showCreateFolderModal);
-                renderFolders(); // Call the actual folder rendering function
-            } else if (currentView.name === 'files-in-folder') {
-                // Render files in folder UI
-                section.innerHTML = `
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="flex items-center flex-1 min-w-0">
-                            <button id="back-to-folders-btn" class="p-2 mr-2 text-gray-500 hover:text-indigo-600 rounded-full hover:bg-gray-100 transition duration-150 flex-shrink-0">
-                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-                            </button>
-                            <h2 class="text-xl font-bold text-gray-800 truncate">${currentView.folderName}</h2>
-                        </div>
-                        <button id="import-file-btn" class="px-3 py-2 bg-indigo-500 text-white text-sm font-medium rounded-lg shadow-md hover:bg-indigo-600 transition duration-150 flex items-center flex-shrink-0">
-                            <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                            Import
-                        </button>
-                    </div>
-                    <div id="file-list" class="space-y-3">
-                        <!-- Files rendered here by renderFiles() -->
-                    </div>
-                `;
-                document.getElementById('back-to-folders-btn').addEventListener('click', goBackToFolders);
-                document.getElementById('import-file-btn').addEventListener('click', () => showFileImportModal(currentView.folderId, currentView.folderName));
-                renderFiles(currentView.folderId);
-            }
-        }
-
-
-        function renderFolders() {
-            const container = document.getElementById('folder-list');
-            if (!container) return; // Only render if the container exists (i.e., we are in the 'folders' view)
-            container.innerHTML = ''; // Clear existing list
-            
-            if (folders.length === 0) {
-                container.innerHTML = '<p class="text-gray-500 text-sm mt-4 p-4 text-center">No folders found. Create one to get started!</p>';
-                return;
-            }
-
-            folders.forEach(folder => {
-                const folderItem = document.createElement('div');
-                folderItem.className = 'flex items-center justify-between p-3 bg-white rounded-xl shadow-md cursor-pointer hover:bg-indigo-50 transition duration-150';
-                
-                // Folder Info (Icon + Name)
-                const info = document.createElement('div');
-                info.className = 'flex items-center';
-                info.innerHTML = `
-                    <svg class="w-6 h-6 text-indigo-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
-                    <span class="text-gray-800 font-medium truncate">${folder.name}</span>
-                `;
-
-                // Actions (Delete Button)
-                const actions = document.createElement('button');
-                actions.className = 'text-red-400 hover:text-red-600 p-1 rounded-full hover:bg-red-50 transition duration-150';
-                actions.innerHTML = `
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                `;
-                actions.onclick = (e) => {
-                    e.stopPropagation(); // Prevent folder view change
-                    showDeleteFolderModal(folder.id, folder.name);
-                };
-
-                folderItem.appendChild(info);
-                folderItem.appendChild(actions);
-                folderItem.onclick = () => viewFolder(folder.id, folder.name); // New: switches to file list view
-
-                container.appendChild(folderItem);
-            });
-        }
-        
-        function renderFiles(folderId) {
-            const container = document.getElementById('file-list');
-            if (!container) return;
-            container.innerHTML = '';
-
-            const filesInFolder = allFiles.filter(file => file.folderId === folderId);
-
-            if (filesInFolder.length === 0) {
-                container.innerHTML = '<p class="text-gray-500 text-sm mt-4 p-4 text-center">No files in this folder. Tap "Import" to add one.</p>';
-                return;
-            }
-
-            filesInFolder.forEach(file => {
-                const fileItem = document.createElement('div');
-                fileItem.className = 'flex items-center justify-between p-3 bg-white rounded-xl shadow-sm border border-gray-100';
-
-                // Icon based on type (simple simulation)
-                let iconPath = '';
-                let iconColor = '';
-                if (file.convertedType === 'PDF') {
-                    iconPath = 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z';
-                    iconColor = 'text-red-500';
-                } else if (file.convertedType === 'DOCX') {
-                    iconPath = 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z';
-                    iconColor = 'text-blue-500';
-                } else if (file.convertedType === 'Original Image') {
-                    iconPath = 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z';
-                    iconColor = 'text-green-500';
-                } else {
-                    iconPath = 'M9 12h6m-6 4h6m-6-8h6';
-                    iconColor = 'text-gray-500';
-                }
-
-
-                // File Info (Icon + Name + Type)
-                const info = document.createElement('div');
-                info.className = 'flex flex-col flex-1 truncate';
-                info.innerHTML = `
-                    <div class="flex items-center mb-1">
-                        <svg class="w-5 h-5 ${iconColor} mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${iconPath}"></path></svg>
-                        <span class="font-medium text-gray-800 truncate">${file.name}</span>
-                    </div>
-                    <span class="text-xs text-gray-500 ml-7">Converted to: ${file.convertedType}</span>
-                `;
-                
-                // Actions (Delete Button - mock action)
-                const actions = document.createElement('button');
-                actions.className = 'text-red-400 hover:text-red-600 p-1 rounded-full hover:bg-red-50 transition duration-150 flex-shrink-0';
-                actions.innerHTML = `
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                `;
-                actions.onclick = () => alertMessage(`Simulating file delete for: ${file.name}`, 'bg-red-500');
-
-                fileItem.appendChild(info);
-                fileItem.appendChild(actions);
-                container.appendChild(fileItem);
-            });
-        }
-        
-        function renderReminders(reminders) {
-            const container = document.getElementById('reminder-list');
-            container.innerHTML = '';
-            
-            if (reminders.length === 0) {
-                container.innerHTML = '<p class="text-gray-500 text-sm mt-4 p-4 text-center">No active reminders.</p>';
-                return;
-            }
-
-            // Sort by due date (earliest first)
-            reminders.sort((a, b) => (a.dueDate || 0) - (b.dueDate || 0));
-
-            reminders.forEach(reminder => {
-                const date = reminder.dueDate ? new Date(reminder.dueDate).toLocaleString() : 'No Date';
-                const isOverdue = reminder.dueDate && reminder.dueDate < Date.now();
-                
-                const item = document.createElement('div');
-                item.className = `flex items-center justify-between p-3 bg-white rounded-xl shadow-md mb-2 ${isOverdue ? 'border-2 border-red-400' : ''}`;
-                
-                const info = document.createElement('div');
-                info.className = 'flex flex-col';
-                info.innerHTML = `
-                    <span class="font-semibold text-gray-800">${reminder.title}</span>
-                    <span class="text-xs ${isOverdue ? 'text-red-600 font-bold' : 'text-indigo-500'} mt-1">
-                        ${isOverdue ? 'OVERDUE: ' : ''}${date}
-                    </span>
-                `;
-
-                const actions = document.createElement('button');
-                actions.className = 'text-red-400 hover:text-red-600 p-1 rounded-full hover:bg-red-50 transition duration-150';
-                actions.innerHTML = `
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                `;
-                actions.onclick = () => deleteReminder(reminder.id);
-
-                item.appendChild(info);
-                item.appendChild(actions);
-                container.appendChild(item);
-            });
-        }
-
-
-        // --- Firestore Actions ---
-
-        async function createFolder(folderName) {
-            if (!folderName || !currentUserId) return;
-            try {
-                const foldersRef = collection(db, getCollectionPath('folders'));
-                await addDoc(foldersRef, {
-                    name: folderName,
-                    userId: currentUserId,
-                    createdAt: serverTimestamp()
-                });
-                console.log("Folder created successfully:", folderName);
-            } catch (e) {
-                console.error("Error adding document: ", e);
-            }
-        }
-        
-        async function deleteFolder(folderId) {
-            if (!folderId) return;
-            try {
-                // In a real app, you would also delete all files within this folder.
-                const folderRef = doc(db, getCollectionPath('folders'), folderId);
-                await deleteDoc(folderRef);
-                console.log("Folder deleted successfully:", folderId);
-            } catch (e) {
-                console.error("Error deleting document: ", e);
-            }
-        }
-
-        async function addFileMetadata(folderId, folderName, fileName, fileType, convertedType) {
-            if (!currentUserId) return;
-            try {
-                const filesRef = collection(db, getCollectionPath('files'));
-                await addDoc(filesRef, {
-                    name: fileName,
-                    originalType: fileType,
-                    convertedType: convertedType,
-                    folderId: folderId,
-                    folderName: folderName,
-                    userId: currentUserId,
-                    createdAt: serverTimestamp()
-                });
-                console.log(`File metadata stored: ${fileName} converted to ${convertedType} in ${folderName}`);
-                // After saving metadata, if we are in this folder view, refresh the file list
-                if (currentView.name === 'files-in-folder' && currentView.folderId === folderId) {
-                    renderFiles(folderId);
-                }
-            } catch (e) {
-                console.error("Error storing file metadata: ", e);
-            }
-        }
-
-        async function addReminder(title, dateString) {
-            if (!title || !currentUserId) return;
-            
-            let timestamp = null;
-            if (dateString) {
-                // Note: Firestore stores dates as Timestamps. We'll store milliseconds for simple sorting/display.
-                timestamp = new Date(dateString).getTime(); 
-            }
-
-            try {
-                const remindersRef = collection(db, getCollectionPath('reminders'));
-                await addDoc(remindersRef, {
-                    title: title,
-                    dueDate: timestamp,
-                    isActive: true,
-                    userId: currentUserId,
-                    createdAt: serverTimestamp()
-                });
-                console.log("Reminder created successfully:", title);
-            } catch (e) {
-                console.error("Error adding reminder: ", e);
-            }
-        }
-
-        async function deleteReminder(reminderId) {
-            if (!reminderId) return;
-            try {
-                const reminderRef = doc(db, getCollectionPath('reminders'), reminderId);
-                await deleteDoc(reminderRef);
-                console.log("Reminder deleted successfully:", reminderId);
-            } catch (e) {
-                console.error("Error deleting reminder: ", e);
-            }
-        }
-        
-        // --- Audio Alarm Logic ---
-
-        function playBeepAlarm() {
-            if (isAlarming) return; // Prevent overlapping alarms
-            isAlarming = true;
-            
-            if (!audioContext) {
-                // Initialize AudioContext on first call
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            }
-
-            let beepCount = 0;
-            const maxBeeps = 2;
-            const beepDuration = 0.2; // seconds
-            const beepFrequency = 700; // Hz (a clear tone)
-
-            function scheduleBeep(time) {
-                if (beepCount >= maxBeeps) {
-                    isAlarming = false;
-                    return;
-                }
-
-                const oscillator = audioContext.createOscillator();
-                const gainNode = audioContext.createGain();
-
-                oscillator.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-
-                // Set oscillator properties
-                oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(beepFrequency, time);
-
-                // Start immediately
-                oscillator.start(time);
-                
-                // Gradually fade out
-                gainNode.gain.setValueAtTime(1, time);
-                gainNode.gain.exponentialRampToValueAtTime(0.001, time + beepDuration);
-                
-                // Stop after duration
-                oscillator.stop(time + beepDuration);
-
-                beepCount++;
-                
-                // Schedule the next beep after a small pause
-                if (beepCount < maxBeeps) {
-                    const nextTime = time + beepDuration + 0.1; // 0.1s pause
-                    // Use setTimeout to schedule the next beep since we can't accurately schedule multiple Web Audio events across a long time span
-                    setTimeout(() => scheduleBeep(audioContext.currentTime), (beepDuration + 0.1) * 1000);
-                }
-            }
-
-            scheduleBeep(audioContext.currentTime);
-        }
-
-        // --- Reminder Check Logic ---
-
-        function checkReminders() {
-            const now = Date.now();
-            
-            activeReminders.forEach(reminder => {
-                // Check if the reminder has a due date, is past due, and hasn't been alarmed yet in this session
-                if (reminder.dueDate && reminder.dueDate <= now && !alarmedReminders.has(reminder.id)) {
-                    
-                    // Show message
-                    alertMessage(`🔔 ALARM: ${reminder.title} is due! Check your reminders tab.`, "bg-red-600");
-
-                    // Play sound (two beeps)
-                    playBeepAlarm();
-                    
-                    // Mark as alarmed to prevent repeating alarm in this session
-                    alarmedReminders.add(reminder.id);
-                }
-            });
-        }
-
-
-        // --- LLM AI Logic ---
-
-        async function fetchGeminiResponse(userQuery, systemInstruction = null, useGrounding = true) {
-            const payload = {
-                contents: [{ parts: [{ text: userQuery }] }],
-                tools: useGrounding ? [{ "google_search": {} }] : undefined,
-                systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
-            };
-
-            const maxRetries = 3;
-            let delay = 1000;
-            
-            for (let i = 0; i < maxRetries; i++) {
-                try {
-                    const response = await fetch(GEMINI_API_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-
-                    if (!response.ok) {
-                        if (response.status === 429 && i < maxRetries - 1) {
-                            await new Promise(resolve => setTimeout(resolve, delay));
-                            delay *= 2;
-                            continue; 
-                        }
-                        throw new Error(`API call failed with status: ${response.status}`);
-                    }
-
-                    const result = await response.json();
-                    const candidate = result.candidates?.[0];
-
-                    if (candidate && candidate.content?.parts?.[0]?.text) {
-                        const text = candidate.content.parts[0].text;
-                        let sources = [];
-                        const groundingMetadata = candidate.groundingMetadata;
-                        
-                        if (groundingMetadata && groundingMetadata.groundingAttributions) {
-                            sources = groundingMetadata.groundingAttributions
-                                .map(attribution => ({
-                                    uri: attribution.web?.uri,
-                                    title: attribution.web?.title,
-                                }))
-                                .filter(source => source.uri && source.title);
-                        }
-
-                        return { text, sources };
-
-                    } else {
-                        return { text: "I'm sorry, I couldn't generate a helpful response for that query.", sources: [] };
-                    }
-                } catch (error) {
-                    console.error("Gemini API Error:", error);
-                    if (i === maxRetries - 1) {
-                         return { text: "An error occurred while communicating with the AI. Please try again later.", sources: [] };
-                    }
-                }
-            }
-        }
-
-        async function handleStudyQuery() {
-            const inputElement = document.getElementById('study-query-input');
-            const resultsDiv = document.getElementById('study-results');
-            const query = inputElement.value.trim();
-
-            if (!query) {
-                alertMessage("Please enter a question or topic to study.", "bg-red-500");
-                return;
-            }
-
-            // Show loading state
-            const loadingHtml = `
-                <div class="flex items-center justify-center p-4 bg-gray-100 rounded-lg text-indigo-600">
-                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Thinking... (Using Google Search to ground the response)
-                </div>
-            `;
-            resultsDiv.innerHTML = loadingHtml;
-            inputElement.disabled = true;
-            document.getElementById('ai-generate-btn').disabled = true;
-
-            const systemInstruction = "You are a friendly, encouraging, and knowledgeable student tutor. Provide a concise, easy-to-understand answer suitable for a student in high school or college. For definitions or concepts, structure the answer clearly. If the query asks for a study strategy or tip, provide three actionable steps.";
-
-            const { text, sources } = await fetchGeminiResponse(query, systemInstruction);
-
-            // Hide loading state
-            inputElement.disabled = false;
-            document.getElementById('ai-generate-btn').disabled = false;
-            
-            let sourceHtml = '';
-            if (sources.length > 0) {
-                sourceHtml = `
-                    <div class="mt-4 pt-3 border-t border-gray-200">
-                        <p class="text-sm font-semibold text-gray-700 mb-2">Sources:</p>
-                        <ul class="space-y-1">
-                            ${sources.map((src, index) => `
-                                <li class="text-xs text-gray-600 truncate">
-                                    <a href="${src.uri}" target="_blank" class="text-indigo-500 hover:text-indigo-700 transition">${src.title || 'Source Link'}</a>
-                                </li>
-                            `).join('')}
-                        </ul>
-                    </div>
-                `;
-            }
-
-            resultsDiv.innerHTML = `
-                <div class="p-4 bg-white rounded-xl shadow-lg">
-                    <h4 class="text-lg font-bold text-gray-800 mb-2">Result:</h4>
-                    <div class="prose max-w-none text-gray-700">
-                        <p>${text.replace(/\n/g, '<br>')}</p>
-                    </div>
-                    ${sourceHtml}
-                </div>
-            `;
-        }
-
-        // --- UI Modal Logic ---
-
-        function showModal(id) {
-            document.getElementById(id).classList.remove('hidden');
-        }
-
-        function hideModal(id) {
-            document.getElementById(id).classList.add('hidden');
-        }
-        
-        // FIX: Expose modal functions to the global window object so that inline HTML onclick handlers can access them.
-        window.showModal = showModal;
-        window.hideModal = hideModal;
-
-
-        // Folder Creation/Deletion Modals
-        function showCreateFolderModal() {
-            document.getElementById('new-folder-input').value = '';
-            showModal('create-folder-modal');
-        }
-
-        function handleCreateFolder() {
-            const name = document.getElementById('new-folder-input').value.trim();
-            if (name) {
-                createFolder(name);
-                hideModal('create-folder-modal');
-            }
-        }
-        
-        function showDeleteFolderModal(folderId, folderName) {
-            document.getElementById('delete-folder-name').textContent = folderName;
-            document.getElementById('confirm-delete-button').onclick = () => {
-                deleteFolder(folderId);
-                hideModal('delete-folder-modal');
-            };
-            showModal('delete-folder-modal');
-        }
-        
-        // File Import Modal (The core feature)
-        let targetFolderId = null;
-        let targetFolderName = null;
-        
-        function showFileImportModal(folderId, folderName) {
-            targetFolderId = folderId;
-            targetFolderName = folderName;
-            document.getElementById('file-import-folder-display').textContent = targetFolderName;
-            document.getElementById('file-upload-input').value = '';
-            document.getElementById('file-name-display').textContent = 'Select a file...';
-            document.getElementById('file-conversion-form').reset();
-            showModal('file-import-modal');
-        }
-        
-        function handleFileSelection(event) {
-            const file = event.target.files[0];
-            if (file) {
-                document.getElementById('file-name-display').textContent = file.name;
-                // Pre-fill suggested name
-                const suggestedName = file.name.split('.').slice(0, -1).join('.');
-                document.getElementById('converted-file-name-input').value = suggestedName;
-            } else {
-                document.getElementById('file-name-display').textContent = 'Select a file...';
-            }
-        }
-
-        function handleFileImport() {
-            const fileInput = document.getElementById('file-upload-input');
-            const file = fileInput.files[0];
-            const fileNameInput = document.getElementById('converted-file-name-input').value.trim();
-            const conversionType = document.querySelector('input[name="conversion-type"]:checked')?.value;
-            
-            if (!file || !fileNameInput || !conversionType) {
-                console.error("Missing file, name, or conversion type.");
-                return; 
-            }
-
-            // Simulate file storage by storing metadata
-            addFileMetadata(
-                targetFolderId, 
-                targetFolderName, 
-                fileNameInput, 
-                file.type, 
-                conversionType
-            );
-            
-            hideModal('file-import-modal');
-            alertMessage(`Successfully 'converted' ${file.name} to ${conversionType} in ${targetFolderName}. (Metadata stored)`);
-        }
-
-        // Reminder Modal
-        function showReminderModal() {
-            document.getElementById('reminder-title-input').value = '';
-            document.getElementById('reminder-date-input').value = '';
-            showModal('add-reminder-modal');
-        }
-
-        function handleAddReminder() {
-            const title = document.getElementById('reminder-title-input').value.trim();
-            const date = document.getElementById('reminder-date-input').value;
-
-            if (title) {
-                addReminder(title, date);
-                hideModal('add-reminder-modal');
-            } else {
-                alertMessage("Reminder title cannot be empty.", "bg-red-500");
-            }
-        }
-
-        // Global Alert Message (instead of window.alert)
-        function alertMessage(message, color = "bg-indigo-500") {
-            const alertBox = document.getElementById('global-alert');
-            alertBox.textContent = message;
-            alertBox.className = `fixed bottom-4 left-1/2 transform -translate-x-1/2 p-3 text-white rounded-lg shadow-lg z-50 transition-opacity duration-300 ${color}`;
-            alertBox.classList.remove('opacity-0', 'hidden');
-            alertBox.classList.add('opacity-100');
-
-            setTimeout(() => {
-                alertBox.classList.remove('opacity-100');
-                alertBox.classList.add('opacity-0');
-                setTimeout(() => alertBox.classList.add('hidden'), 300);
-            }, 5000); // Increased duration to 5s for alarms
-        }
-
-        // --- Setup Event Listeners ---
-        function setupListeners() {
-            // Note: The create-folder-btn listener is now dynamically attached/detached in renderFoldersSection
-            document.getElementById('confirm-create-folder').addEventListener('click', handleCreateFolder);
-            document.getElementById('add-reminder-btn').addEventListener('click', showReminderModal);
-            document.getElementById('confirm-add-reminder').addEventListener('click', handleAddReminder);
-            document.getElementById('file-upload-input').addEventListener('change', handleFileSelection);
-            document.getElementById('confirm-file-import').addEventListener('click', handleFileImport);
-            
-            // LLM listener
-            document.getElementById('ai-generate-btn').addEventListener('click', handleStudyQuery);
-            document.getElementById('study-query-input').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    handleStudyQuery();
-                }
-            });
-
-            // Tab switching logic
-            const tabs = document.querySelectorAll('.tab-btn');
-            const sections = document.querySelectorAll('.content-section');
-            tabs.forEach(tab => {
-                tab.addEventListener('click', () => {
-                    // Reset to folders view if clicking the Files tab
-                    if (tab.getAttribute('data-target') === 'folders-section') {
-                        goBackToFolders();
-                    }
-                    
-                    tabs.forEach(t => t.classList.remove('border-indigo-500', 'text-indigo-600', 'font-semibold'));
-                    tab.classList.add('border-indigo-500', 'text-indigo-600', 'font-semibold');
-
-                    const target = tab.getAttribute('data-target');
-                    sections.forEach(s => s.classList.add('hidden'));
-                    document.getElementById(target).classList.remove('hidden');
-                });
-            });
-        }
-    </script>
+    <!-- 2. Load Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <!-- 3. PWA Manifest Link -->
+    <link rel="manifest" href="manifest.json">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-        body {
+        /* Inter font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        html, body {
             font-family: 'Inter', sans-serif;
-            background-color: #f4f7f9;
+            overscroll-behavior: none; /* Prevents pull-to-refresh */
         }
-        /* Custom radio button style for file conversion */
-        input[type="radio"]:checked + label {
-            background-color: #6366f1; /* Indigo-500 */
-            color: white;
-            border-color: #6366f1;
+        /* Custom scrollbar */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
         }
-        .prose p {
-            margin-bottom: 1em;
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9; /* cool-gray-100 */
         }
-        .prose ul, .prose ol {
-            margin-bottom: 1em;
-            padding-left: 1.5em;
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #94a3b8; /* cool-gray-400 */
+            border-radius: 3px;
         }
-        .prose ul li {
-            list-style-type: disc;
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #64748b; /* cool-gray-500 */
         }
-        .prose ol li {
-            list-style-type: decimal;
+        /* Hide number input spinners */
+        input[type='number']::-webkit-inner-spin-button,
+        input[type='number']::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type='number'] {
+            -moz-appearance: textfield;
+        }
+        /* Glassmorphism style for modal */
+        .glassmorphism {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        /* Custom transition for sections */
+        .section {
+            transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+        }
+        .section.hidden {
+            transform: translateY(20px);
+            opacity: 0;
+            pointer-events: none;
+        }
+        .section.visible {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        /* Animation for loading spinner */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-left-color: #ffffff;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        .spinner-dark {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #4f46e5; /* indigo-600 */
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
-<body class="min-h-screen antialiased">
-
-    <!-- Global Alert Message -->
-    <div id="global-alert" class="hidden opacity-0"></div>
+<body class="bg-gray-100 h-full flex justify-center items-center p-4">
 
     <!-- Main Mobile Container -->
-    <div id="main-content" class="max-w-md mx-auto bg-white shadow-2xl min-h-screen">
+    <div class="w-full max-w-md h-full max-h-[800px] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         
         <!-- Header -->
-        <header class="bg-indigo-600 text-white p-4 flex justify-between items-center rounded-b-xl shadow-lg">
+        <header class="bg-indigo-600 text-white p-4 flex justify-between items-center shadow-md z-10">
             <div>
-                <h1 class="text-2xl font-bold">Student Organizer</h1>
-                <p id="user-id-display" class="text-xs opacity-75">User ID: N/A</p>
+                <h1 class="text-xl font-bold">Student Organizer</h1>
+                <p id="user-id-display" class="text-xs text-indigo-200">User ID: N/A</p>
             </div>
-            <!-- Main Add Button -->
-            <button id="add-reminder-btn" class="bg-white text-indigo-600 p-2 rounded-full shadow-lg hover:bg-indigo-100 transition duration-150">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <button id="add-reminder-btn" class="p-2 rounded-full bg-indigo-500 hover:bg-indigo-400 transition">
+                <i class="ph ph-plus text-xl"></i>
             </button>
         </header>
 
-        <!-- Tab Navigation -->
-        <div class="flex border-b border-gray-200 sticky top-0 bg-white z-10">
-            <button class="flex-1 p-3 text-center border-b-2 tab-btn border-indigo-500 text-indigo-600 font-semibold" data-target="folders-section">
-                Files
-            </button>
-            <button class="flex-1 p-3 text-center border-b-2 tab-btn border-transparent text-gray-500 hover:text-indigo-600" data-target="reminders-section">
-                Reminders
-            </button>
-            <button class="flex-1 p-3 text-center border-b-2 tab-btn border-transparent text-gray-500 hover:text-indigo-600" data-target="study-ai-section">
-                ✨ Study AI
-            </button>
-        </div>
+        <!-- Main Content Area -->
+        <main class="flex-1 overflow-y-auto custom-scrollbar p-4" id="main-content">
+            
+            <!-- Offline Mode Warning -->
+            <div id="offline-warning" class="hidden bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-lg mb-4">
+                <p class="font-bold">Offline Mode</p>
+                <p>Could not connect to the database. File and reminder saving is disabled. Check your Firebase config and security rules.</p>
+            </div>
 
-        <!-- --- Folders & File Content Section (Dynamic Content) --- -->
-        <div id="folders-section" class="p-4 content-section">
-            <!-- Content dynamically rendered by renderFoldersSection() -->
-            <p class="text-center text-gray-400">Initializing views...</p>
-        </div>
+            <!-- Auth Error Warning -->
+            <div id="auth-error-warning" class="hidden bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-lg mb-4">
+                <p class="font-bold">Authentication Failed</p>
+                <p id="auth-error-message">Could not sign in. Please ensure Anonymous Authentication is enabled in your Firebase project.</p>
+            </div>
 
-        <!-- --- Reminders Content Section --- -->
-        <div id="reminders-section" class="p-4 content-section hidden">
-            <h2 class="text-xl font-bold text-gray-800 mb-4">Upcoming Reminders</h2>
-            <div id="reminder-list" class="space-y-3">
-                <!-- Reminders rendered here by JS -->
-                <p class="text-center text-gray-400">Loading reminders...</p>
+            <!-- Initializing Spinner -->
+            <div id="initializing-view" class="flex flex-col items-center justify-center h-full text-gray-500">
+                <div class="spinner-dark"></div>
+                <p class="mt-3">Initializing views...</p>
             </div>
             
-        </div>
+            <!-- Files Section (Folders) -->
+            <section id="files-section-folders" class="section hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold text-gray-700">Folders</h2>
+                    <div>
+                        <button id="quick-import-btn" class="bg-indigo-100 text-indigo-600 px-3 py-2 rounded-lg text-sm font-medium hover:bg-indigo-200 transition">
+                            <i class="ph ph-upload-simple align-middle mr-1"></i> Quick Import
+                        </button>
+                        <button id="new-folder-btn" class="bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition ml-2">
+                            <i class="ph ph-folder-plus align-middle mr-1"></i> New Folder
+                        </button>
+                    </div>
+                </div>
+                <div id="folder-list" class="space-y-2">
+                    <!-- Folders will be dynamically inserted here -->
+                </div>
+            </section>
 
-        <!-- --- Study AI Content Section (New) --- -->
-        <div id="study-ai-section" class="p-4 content-section hidden">
-            <h2 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
-                ✨ Study AI Assistant
-            </h2>
-            <p class="text-sm text-gray-500 mb-4">Ask any academic question or request study tips (e.g., "Explain photosynthesis" or "Best way to study for finals").</p>
+            <!-- Files Section (Files in Folder) -->
+            <section id="files-section-files" class="section hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <button id="back-to-folders-btn" class="p-2 rounded-full hover:bg-gray-200">
+                        <i class="ph ph-arrow-left text-xl text-gray-600"></i>
+                    </button>
+                    <h2 id="current-folder-name" class="text-lg font-semibold text-gray-700 truncate">Folder Name</h2>
+                    <button id="import-to-folder-btn" class="bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition">
+                        <i class="ph ph-upload-simple align-middle mr-1"></i> Import File
+                    </button>
+                </div>
+                <div id="file-list" class="space-y-2">
+                    <!-- Files will be dynamically inserted here -->
+                </div>
+            </section>
 
-            <div class="flex space-x-2 mb-6">
-                <input type="text" id="study-query-input" placeholder="Enter your question or topic..." class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
-                <button id="ai-generate-btn" class="px-4 py-3 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition font-semibold">
-                    Ask
+            <!-- Reminders Section -->
+            <section id="reminders-section" class="section hidden">
+                <h2 class="text-lg font-semibold text-gray-700 mb-4">Active Reminders</h2>
+                <div id="reminder-list" class="space-y-2">
+                    <!-- Reminders will be dynamically inserted here -->
+                </div>
+            </section>
+
+            <!-- Study AI Section -->
+            <section id="study-ai-section" class="section hidden">
+                <h2 class="text-lg font-semibold text-gray-700 mb-4">✨ Study AI Assistant</h2>
+                <div class="flex flex-col h-full">
+                    <div class="flex space-x-2">
+                        <input id="study-ai-input" type="text" placeholder="e.g., Explain the Krebs Cycle" class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        <button id="study-ai-ask-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition flex items-center justify-center">
+                            <span id="study-ai-ask-btn-text">Ask</span>
+                            <div id="study-ai-ask-loader" class="spinner hidden"></div>
+                        </button>
+                    </div>
+                    
+                    <div id="study-ai-result-container" class="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 hidden">
+                        <div class="flex justify-between items-center mb-2">
+                            <h3 class="text-md font-semibold text-gray-800">Result:</h3>
+                            <button id="study-ai-tts-btn" class="hidden bg-gray-200 text-gray-700 px-3 py-1 rounded-lg text-sm font-medium hover:bg-gray-300 transition flex items-center">
+                                <span id="study-ai-tts-btn-text">🔊 Read Aloud</span>
+                                <div id="study-ai-tts-loader" class="spinner-dark hidden" style="width: 16px; height: 16px; border-width: 2px; margin-left: 8px;"></div>
+                            </button>
+                        </div>
+                        <p id="study-ai-result" class="text-gray-700 whitespace-pre-wrap"></p>
+                        
+                        <div id="study-ai-sources-container" class="mt-4 hidden">
+                            <h4 class="text-sm font-semibold text-gray-600">Sources:</h4>
+                            <ul id="study-ai-sources-list" class="list-disc list-inside text-sm text-blue-600 space-y-1">
+                                <!-- Sources will be dynamically inserted here -->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Navigation Bar -->
+        <nav class="bg-gray-100 border-t border-gray-200 p-2 flex justify-around">
+            <button class="nav-btn flex flex-col items-center p-2 rounded-lg w-full text-indigo-600" data-section="files-section">
+                <i class="ph ph-files text-2xl"></i>
+                <span class="text-xs font-medium">Files</span>
+            </button>
+            <button class="nav-btn flex flex-col items-center p-2 rounded-lg w-full text-gray-500" data-section="reminders-section">
+                <i class="ph ph-bell text-2xl"></i>
+                <span class="text-xs font-medium">Reminders</span>
+            </button>
+            <button class="nav-btn flex flex-col items-center p-2 rounded-lg w-full text-gray-500" data-section="study-ai-section">
+                <i class="ph ph-brain text-2xl"></i>
+                <span class="text-xs font-medium">Study AI</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- Modals Container -->
+
+    <!-- New Folder Modal -->
+    <div id="new-folder-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center p-4 z-50 hidden" onclick="hideModal('new-folder-modal')">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm" onclick="event.stopPropagation()">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Create New Folder</h3>
+            <input id="new-folder-name" type="text" placeholder="e.g., Physics Labs" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none mb-4">
+            <div class="flex justify-end space-x-3">
+                <button class="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition" onclick="hideModal('new-folder-modal')">Cancel</button>
+                <button id="create-folder-btn" class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition flex items-center">
+                    <span id="create-folder-btn-text">Create</span>
+                    <div id="create-folder-loader" class="spinner hidden ml-2"></div>
                 </button>
             </div>
-
-            <!-- AI Results Area -->
-            <div id="study-results" class="space-y-4">
-                <div class="p-4 bg-gray-50 rounded-xl border border-gray-200 text-gray-700">
-                    Your answers, grounded by Google Search, will appear here.
-                </div>
-            </div>
         </div>
-        <!-- --------------------------------------- -->
-
     </div>
 
-    <!-- --- Modals --- -->
-
-    <!-- 1. Create Folder Modal -->
-    <div id="create-folder-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onclick="hideModal('create-folder-modal')">
-        <div class="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl" onclick="event.stopPropagation()">
-            <h3 class="text-xl font-bold mb-4 text-indigo-600">Create New Folder</h3>
-            <input type="text" id="new-folder-input" placeholder="Enter folder name (e.g., 'Physics Notes')" class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-indigo-500 focus:border-indigo-500">
-            <div class="flex justify-end space-x-3">
-                <button onclick="hideModal('create-folder-modal')" class="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition">Cancel</button>
-                <button id="confirm-create-folder" class="px-4 py-2 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition">Create</button>
+    <!-- Add Reminder Modal -->
+    <div id="add-reminder-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center p-4 z-50 hidden" onclick="hideModal('add-reminder-modal')">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm" onclick="event.stopPropagation()">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Set Reminder / Alarm</h3>
+            <div class="space-y-4">
+                <input id="reminder-title" type="text" placeholder="e.g., Study for Chem Final" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                <input id="reminder-datetime" type="datetime-local" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+            </div>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button class="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition" onclick="hideModal('add-reminder-modal')">Cancel</button>
+                <button id="set-reminder-btn" class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition flex items-center">
+                    <span id="set-reminder-btn-text">Set Alarm</span>
+                    <div id="set-reminder-loader" class="spinner hidden ml-2"></div>
+                </button>
             </div>
         </div>
     </div>
 
-    <!-- 2. Delete Folder Confirmation Modal -->
-    <div id="delete-folder-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onclick="hideModal('delete-folder-modal')">
-        <div class="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl" onclick="event.stopPropagation()">
-            <h3 class="text-xl font-bold mb-2 text-red-600">Confirm Deletion</h3>
-            <p class="text-gray-700 mb-4">Are you sure you want to delete the folder: <span id="delete-folder-name" class="font-semibold text-red-700"></span>?</p>
-            <p class="text-sm text-gray-500 mb-6">All files in this folder will also be removed from the list (mock deletion).</p>
-            <div class="flex justify-end space-x-3">
-                <button onclick="hideModal('delete-folder-modal')" class="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition">Cancel</button>
-                <button id="confirm-delete-button" class="px-4 py-2 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700 transition">Delete</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- 3. File Import/Conversion Modal (The complex step) -->
-    <div id="file-import-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onclick="hideModal('file-import-modal')">
-        <div class="bg-white p-6 rounded-2xl w-full max-w-lg shadow-2xl" onclick="event.stopPropagation()">
-            <h3 class="text-xl font-bold mb-4 text-indigo-600">Import & Convert File</h3>
-            <p class="text-sm text-gray-500 mb-4">Destination Folder: <span id="file-import-folder-display" class="font-semibold text-indigo-700"></span></p>
-
-            <form id="file-conversion-form">
-                <!-- File Selection -->
-                <label class="block text-sm font-medium text-gray-700 mb-2">1. Select Your File (e.g., Photo)</label>
-                <input type="file" id="file-upload-input" accept="image/*" class="hidden">
-                <label for="file-upload-input" class="w-full p-3 border-2 border-dashed border-gray-300 rounded-lg mb-4 text-center cursor-pointer hover:bg-gray-50 transition block">
-                    <span id="file-name-display" class="text-indigo-600 font-medium">Select a file...</span>
-                </label>
-
-                <!-- File Name Input -->
-                <label for="converted-file-name-input" class="block text-sm font-medium text-gray-700 mb-2">2. Name Your New File</label>
-                <input type="text" id="converted-file-name-input" placeholder="Enter file name without extension" class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-indigo-500 focus:border-indigo-500">
+    <!-- Quick Import Modal (for "Share to App" flow) -->
+    <div id="quick-import-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center p-4 z-50 hidden" onclick="hideModal('quick-import-modal')">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm" onclick="event.stopPropagation()">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Import & Convert File</h3>
+            <div class="space-y-4">
                 
-                <!-- Conversion Type Selection -->
-                <label class="block text-sm font-medium text-gray-700 mb-3">3. Choose Output Type (Conversion)</label>
-                <div class="grid grid-cols-2 gap-3 mb-6">
-                    <!-- Option 1: PDF -->
-                    <div>
-                        <input type="radio" id="type-pdf" name="conversion-type" value="PDF" class="hidden">
-                        <label for="type-pdf" class="flex items-center justify-center p-3 border-2 border-gray-300 rounded-xl cursor-pointer transition text-gray-700">
-                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                            PDF
-                        </label>
-                    </div>
-                    <!-- Option 2: DOCX -->
-                    <div>
-                        <input type="radio" id="type-docx" name="conversion-type" value="DOCX" class="hidden">
-                        <label for="type-docx" class="flex items-center justify-center p-3 border-2 border-gray-300 rounded-xl cursor-pointer transition text-gray-700">
-                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                            DOCX
-                        </label>
-                    </div>
-                    <!-- Option 3: Original Image -->
-                    <div>
-                        <input type="radio" id="type-img" name="conversion-type" value="Original Image" class="hidden" checked>
-                        <label for="type-img" class="flex items-center justify-center p-3 border-2 border-gray-300 rounded-xl cursor-pointer transition text-gray-700">
-                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                            Image
-                        </label>
-                    </div>
-                    <!-- Option 4: Plain Text (OCR Simulation) -->
-                    <div>
-                        <input type="radio" id="type-txt" name="conversion-type" value="TXT (OCR)" class="hidden">
-                        <label for="type-txt" class="flex items-center justify-center p-3 border-2 border-gray-300 rounded-xl cursor-pointer transition text-gray-700">
-                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m-6-8h6"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m-4 7h17"></path></svg>
-                            Text (OCR)
-                        </label>
+                <div>
+                    <label class="text-sm font-medium text-gray-700">1. Select Destination Folder</label>
+                    <select id="import-folder-select" class="w-full p-3 border border-gray-300 rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        <option value="">Select a folder...</option>
+                        <!-- Folder options will be dynamically inserted here -->
+                    </select>
+                </div>
+
+                <div>
+                    <label class="text-sm font-medium text-gray-700">2. Select Your File (e.g., Photo)</label>
+                    <input id="import-file-input" type="file" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 mt-1">
+                </div>
+
+                <!-- AI Analysis Section -->
+                <div class="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <button id="analyze-content-btn" class="w-full bg-gray-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-700 transition flex items-center justify-center">
+                        <i class="ph ph-magic-wand align-middle mr-1"></i>
+                        <span id="analyze-content-btn-text">✨ Analyze Content</span>
+                        <div id="analyze-content-loader" class="spinner hidden ml-2" style="width: 16px; height: 16px; border-width: 2px;"></div>
+                    </button>
+                    <div id="ai-analysis-result" class="hidden mt-2">
+                        <p class="text-xs text-gray-600 italic">
+                            <strong class="text-gray-700">AI Summary:</strong>
+                            <span id="ai-summary-text"></span>
+                        </p>
                     </div>
                 </div>
-            </form>
 
-            <div class="flex justify-end space-x-3">
-                <button onclick="hideModal('file-import-modal')" class="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition">Cancel</button>
-                <button id="confirm-file-import" class="px-4 py-2 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition">Save & Store</button>
+                <div>
+                    <label class="text-sm font-medium text-gray-700">3. Name Your New File</label>
+                    <input id="import-file-name" type="text" placeholder="e.g., Lab_Diagram_Notes" class="w-full p-3 border border-gray-300 rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                </div>
+
+                <div>
+                    <label class="text-sm font-medium text-gray-700">4. Convert & Store As</label>
+                    <select id="import-convert-type" class="w-full p-3 border border-gray-300 rounded-lg mt-1 focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        <option value="pdf">PDF Document (.pdf)</option>
+                        <option value="docx">Word Document (.docx)</option>
+                        <option value="img">Original Image (.png/.jpg)</option>
+                        <option value="txt">Text File (.txt)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex justify-end space-x-3 mt-6">
+                <button class="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition" onclick="hideModal('quick-import-modal')">Cancel</button>
+                <button id="save-file-btn" class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition flex items-center">
+                    <span id="save-file-btn-text">Save & Store</span>
+                    <div id="save-file-loader" class="spinner hidden ml-2"></div>
+                </button>
             </div>
         </div>
     </div>
 
-    <!-- 4. Add Reminder Modal -->
-    <div id="add-reminder-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onclick="hideModal('add-reminder-modal')">
-        <div class="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl" onclick="event.stopPropagation()">
-            <h3 class="text-xl font-bold mb-4 text-indigo-600">Set a New Reminder</h3>
-            
-            <label for="reminder-title-input" class="block text-sm font-medium text-gray-700 mb-2">Reminder Title (e.g., 'Submit History Paper')</label>
-            <input type="text" id="reminder-title-input" placeholder="Title" class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-indigo-500 focus:border-indigo-500">
-            
-            <label for="reminder-date-input" class="block text-sm font-medium text-gray-700 mb-2">Due Date / Time (Optional)</label>
-            <input type="datetime-local" id="reminder-date-input" class="w-full p-3 border border-gray-300 rounded-lg mb-6 focus:ring-indigo-500 focus:border-indigo-500">
-            
-            <div class="flex justify-end space-x-3">
-                <button onclick="hideModal('add-reminder-modal')" class="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition">Cancel</button>
-                <button id="confirm-add-reminder" class="px-4 py-2 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition">Set Alarm</button>
+    <!-- Alarm Modal -->
+    <div id="alarm-modal" class="fixed top-5 right-5 bg-red-600 text-white p-4 rounded-lg shadow-2xl z-50 hidden animate-pulse" onclick="hideModal('alarm-modal')">
+        <h3 class="font-bold text-lg"><i class="ph ph-alarm align-middle"></i> ALARM!</h3>
+        <p id="alarm-title" class="text-sm">Reminder is due!</p>
+    </div>
+
+    <!-- Simple Alert Modal -->
+    <div id="alert-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center p-4 z-50 hidden" onclick="hideModal('alert-modal')">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm" onclick="event.stopPropagation()">
+            <h3 id="alert-title" class="text-lg font-semibold text-gray-800 mb-2">Alert</h3>
+            <p id="alert-message" class="text-gray-600 mb-4">This is an alert message.</p>
+            <div class="flex justify-end">
+                <button class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition" onclick="hideModal('alert-modal')">OK</button>
             </div>
         </div>
     </div>
 
+    <!-- Confirm Delete Modal -->
+    <div id="confirm-delete-modal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center p-4 z-50 hidden" onclick="hideModal('confirm-delete-modal')">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm" onclick="event.stopPropagation()">
+            <h3 class="text-lg font-semibold text-gray-800 mb-2">Confirm Deletion</h3>
+            <p id="confirm-delete-message" class="text-gray-600 mb-4">Are you sure you want to delete this?</p>
+            <div class="flex justify-end space-x-3">
+                <button id="confirm-delete-cancel-btn" class="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition">Cancel</button>
+                <button id="confirm-delete-confirm-btn" class="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition">Delete</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- PWA Service Worker Registration Script -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+        }
+    </script>
+
+    <!-- 
+    ===============================================================
+    MAIN APPLICATION JAVASCRIPT
+    ===============================================================
+    -->
+    <script type="module">
+        // =================================================================
+        // 1. FIREBASE SDK IMPORTS
+        // (Ensured to be declared ONLY ONCE to fix the error)
+        // =================================================================
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            signInWithCustomToken, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            getDoc, 
+            setDoc, 
+            addDoc, 
+            deleteDoc, 
+            onSnapshot, 
+            collection, 
+            query, 
+            where,
+            Timestamp,
+            setLogLevel,
+            getDocs
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // =================================================================
+        // 2. FIREBASE CONFIGURATION & INITIALIZATION
+        // (Using your provided credentials)
+        // =================================================================
+        
+        // Your web app's Firebase configuration
+        // This is the config you provided
+        const firebaseConfig = {
+          apiKey: "AIzaSyAa4EpAF0CakYdQsbGxurUNXMwRH9W4IcQ",
+          authDomain: "personalfolder-d9ba8.firebaseapp.com",
+          projectId: "personalfolder-d9ba8",
+          storageBucket: "personalfolder-d9ba8.firebasestorage.app",
+          messagingSenderId: "216731617905",
+          appId: "1:216731617905:web:fea13d842d3102f7c229d0",
+          measurementId: "G-GLWFYE1GW0"
+        };
+        
+        // This 'appId' is used for database paths
+        const appId = firebaseConfig.projectId || 'default-app-id';
+        // We will sign in anonymously since we're not using the Canvas token
+        const initialAuthToken = null; 
+        
+        // This flag will now be true, enabling the database functions
+        const isFirebaseAvailable = Object.keys(firebaseConfig).length > 0;
+
+        // Global Firebase instances
+        let db, auth;
+        let userId = null; // Will be set after auth
+        let currentFolderId = null; // Tracks which folder view is active
+
+        // Global state to prevent double-listening
+        let folderListener = null;
+        let fileListener = null;
+        let reminderListener = null;
+        
+        // For alarm audio
+        let audioContext;
+        const alarmedReminders = new Set();
+
+        // =================================================================
+        // 3. UI & STATE MANAGEMENT
+        // =================================================================
+
+        // DOM Element Cache
+        const ui = {
+            userIdDisplay: document.getElementById('user-id-display'),
+            initializingView: document.getElementById('initializing-view'),
+            offlineWarning: document.getElementById('offline-warning'),
+            authErrorWarning: document.getElementById('auth-error-warning'),
+            authErrorMessage: document.getElementById('auth-error-message'),
+            mainContent: document.getElementById('main-content'),
+            navButtons: document.querySelectorAll('.nav-btn'),
+            sections: {
+                folders: document.getElementById('files-section-folders'),
+                files: document.getElementById('files-section-files'),
+                reminders: document.getElementById('reminders-section'),
+                studyAI: document.getElementById('study-ai-section'),
+            },
+            folderList: document.getElementById('folder-list'),
+            fileList: document.getElementById('file-list'),
+            reminderList: document.getElementById('reminder-list'),
+            backToFoldersBtn: document.getElementById('back-to-folders-btn'),
+            currentFolderName: document.getElementById('current-folder-name'),
+            // New Folder Modal
+            newFolderBtn: document.getElementById('new-folder-btn'),
+            createFolderBtn: document.getElementById('create-folder-btn'),
+            createFolderLoader: document.getElementById('create-folder-loader'),
+            newFolderName: document.getElementById('new-folder-name'),
+            // Reminder Modal
+            addReminderBtn: document.getElementById('add-reminder-btn'),
+            setReminderBtn: document.getElementById('set-reminder-btn'),
+            setReminderLoader: document.getElementById('set-reminder-loader'),
+            reminderTitle: document.getElementById('reminder-title'),
+            reminderDatetime: document.getElementById('reminder-datetime'),
+            // Quick Import Modal
+            quickImportBtn: document.getElementById('quick-import-btn'),
+            importToFolderBtn: document.getElementById('import-to-folder-btn'),
+            importFolderSelect: document.getElementById('import-folder-select'),
+            importFileInput: document.getElementById('import-file-input'),
+            analyzeContentBtn: document.getElementById('analyze-content-btn'),
+            analyzeContentBtnText: document.getElementById('analyze-content-btn-text'),
+            analyzeContentLoader: document.getElementById('analyze-content-loader'),
+            aiAnalysisResult: document.getElementById('ai-analysis-result'),
+            aiSummaryText: document.getElementById('ai-summary-text'),
+            importFileName: document.getElementById('import-file-name'),
+            importConvertType: document.getElementById('import-convert-type'),
+            saveFileBtn: document.getElementById('save-file-btn'),
+            saveFileLoader: document.getElementById('save-file-loader'),
+            // Study AI
+            studyAiInput: document.getElementById('study-ai-input'),
+            studyAiAskBtn: document.getElementById('study-ai-ask-btn'),
+            studyAiAskBtnText: document.getElementById('study-ai-ask-btn-text'),
+            studyAiAskLoader: document.getElementById('study-ai-ask-loader'),
+            studyAiResultContainer: document.getElementById('study-ai-result-container'),
+            studyAiResult: document.getElementById('study-ai-result'),
+            studyAiSourcesContainer: document.getElementById('study-ai-sources-container'),
+            studyAiSourcesList: document.getElementById('study-ai-sources-list'),
+            studyAiTtsBtn: document.getElementById('study-ai-tts-btn'),
+            studyAiTtsBtnText: document.getElementById('study-ai-tts-btn-text'),
+            studyAiTtsLoader: document.getElementById('study-ai-tts-loader'),
+            // Confirm Delete Modal
+            confirmDeleteConfirmBtn: document.getElementById('confirm-delete-confirm-btn'),
+            confirmDeleteCancelBtn: document.getElementById('confirm-delete-cancel-btn'),
+            confirmDeleteMessage: document.getElementById('confirm-delete-message'),
+        };
+
+        /**
+         * Shows a modal by its ID.
+         */
+        function showModal(modalId) {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.classList.remove('hidden');
+            }
+        }
+        window.showModal = showModal; // Expose to global scope for HTML onclick
+
+        /**
+         * Hides a modal by its ID.
+         */
+        function hideModal(modalId) {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.classList.add('hidden');
+            }
+        }
+        window.hideModal = hideModal; // Expose to global scope
+
+        /**
+         * Shows a simple alert message.
+         */
+        function showAlert(title, message) {
+            document.getElementById('alert-title').textContent = title;
+            document.getElementById('alert-message').textContent = message;
+            showModal('alert-modal');
+        }
+        window.showAlert = showAlert;
+
+        /**
+         * Shows a confirmation modal and returns a Promise.
+         */
+        function showConfirm(message) {
+            return new Promise((resolve) => {
+                ui.confirmDeleteMessage.textContent = message;
+                showModal('confirm-delete-modal');
+
+                ui.confirmDeleteConfirmBtn.onclick = () => {
+                    hideModal('confirm-delete-modal');
+                    resolve(true);
+                };
+                ui.confirmDeleteCancelBtn.onclick = () => {
+                    hideModal('confirm-delete-modal');
+                    resolve(false);
+                };
+            });
+        }
+
+        /**
+         * Toggles loading state for buttons.
+         */
+        function toggleButtonLoading(button, textElement, loaderElement, isLoading) {
+            if (isLoading) {
+                button.disabled = true;
+                if(textElement) textElement.classList.add('hidden');
+                loaderElement.classList.remove('hidden');
+            } else {
+                button.disabled = false;
+                if(textElement) textElement.classList.remove('hidden');
+                loaderElement.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Manages section visibility for navigation.
+         */
+        function showSection(sectionId) {
+            // Hide all sections
+            Object.values(ui.sections).forEach(section => {
+                section.classList.add('hidden');
+                section.classList.remove('visible');
+            });
+            
+            // Show the target section
+            let sectionToShow;
+            if (sectionId === 'files-section') {
+                // Logic to show either folders or files view
+                if (currentFolderId) {
+                    sectionToShow = ui.sections.files;
+                } else {
+                    sectionToShow = ui.sections.folders;
+                }
+            } else {
+                sectionToShow = document.getElementById(sectionId);
+            }
+
+            if (sectionToShow) {
+                sectionToShow.classList.remove('hidden');
+                sectionToShow.classList.add('visible');
+            }
+
+            // Update nav button active state
+            ui.navButtons.forEach(btn => {
+                if (btn.dataset.section === sectionId) {
+                    btn.classList.add('text-indigo-600');
+                    btn.classList.remove('text-gray-500');
+                } else {
+                    btn.classList.remove('text-indigo-600');
+                    btn.classList.add('text-gray-500');
+                }
+            });
+        }
+        
+        /**
+         * Handles navigation between folder list and file list.
+         */
+        function showFilesView(folder) {
+            currentFolderId = folder.id;
+            ui.currentFolderName.textContent = folder.name;
+            showSection('files-section');
+            listenForFiles(currentFolderId);
+        }
+
+        function showFoldersView() {
+            currentFolderId = null;
+            // Stop listening for files when backing out
+            if (fileListener) {
+                fileListener();
+                fileListener = null;
+            }
+            showSection('files-section');
+        }
+
+        /**
+         * Updates the folder select dropdown in the import modal.
+         */
+        function updateFolderSelect(folders) {
+            ui.importFolderSelect.innerHTML = '<option value="">Select a folder...</option>';
+            folders.forEach(folder => {
+                const option = document.createElement('option');
+                option.value = folder.id;
+                option.textContent = folder.name;
+                ui.importFolderSelect.appendChild(option);
+            });
+        }
+
+        // =================================================================
+        // 4. FIREBASE DATA OPERATIONS
+        // =================================================================
+
+        /**
+         * Creates collection paths based on user ID.
+         */
+        const getFoldersCollection = () => collection(db, `artifacts/${appId}/users/${userId}/folders`);
+        const getFilesCollection = (folderId) => collection(db, `artifacts/${appId}/users/${userId}/folders/${folderId}/files`);
+        const getRemindersCollection = () => collection(db, `artifacts/${appId}/users/${userId}/reminders`);
+
+        /**
+         * Listens for real-time updates to folders.
+         */
+        function listenForFolders() {
+            if (folderListener) folderListener(); // Unsubscribe from old listener
+            
+            const q = query(getFoldersCollection());
+            folderListener = onSnapshot(q, (snapshot) => {
+                const folders = [];
+                ui.folderList.innerHTML = ''; // Clear list
+                
+                snapshot.forEach((doc) => {
+                    const folder = { id: doc.id, ...doc.data() };
+                    folders.push(folder);
+                    const folderEl = createFolderElement(folder);
+                    ui.folderList.appendChild(folderEl);
+                });
+
+                if (snapshot.empty) {
+                    ui.folderList.innerHTML = '<p class="text-gray-500 text-center">No folders created yet.</p>';
+                }
+                
+                updateFolderSelect(folders); // Update import modal dropdown
+
+            }, (error) => {
+                console.error("Error listening for folders: ", error);
+                showAlert("Error", "Could not load folders. " + error.message);
+            });
+        }
+        
+        /**
+         * Listens for real-time updates to files within a folder.
+         */
+        function listenForFiles(folderId) {
+            if (fileListener) fileListener(); // Unsubscribe from old listener
+            
+            const q = query(getFilesCollection(folderId));
+            fileListener = onSnapshot(q, (snapshot) => {
+                ui.fileList.innerHTML = ''; // Clear list
+                
+                snapshot.forEach((doc) => {
+                    const file = { id: doc.id, ...doc.data() };
+                    const fileEl = createFileElement(file);
+                    ui.fileList.appendChild(fileEl);
+                });
+
+                if (snapshot.empty) {
+                    ui.fileList.innerHTML = '<p class="text-gray-500 text-center">No files in this folder.</p>';
+                }
+            }, (error) => {
+                console.error("Error listening for files: ", error);
+                showAlert("Error", "Could not load files. " + error.message);
+            });
+        }
+        
+        /**
+         * Listens for real-time updates to reminders.
+         */
+        function listenForReminders() {
+            if (reminderListener) reminderListener(); // Unsubscribe from old listener
+            
+            const q = query(getRemindersCollection());
+            reminderListener = onSnapshot(q, (snapshot) => {
+                ui.reminderList.innerHTML = ''; // Clear list
+                
+                snapshot.forEach((doc) => {
+                    const reminder = { id: doc.id, ...doc.data() };
+                    const reminderEl = createReminderElement(reminder);
+                    ui.reminderList.appendChild(reminderEl);
+                });
+
+                if (snapshot.empty) {
+                    ui.reminderList.innerHTML = '<p class="text-gray-500 text-center">No active reminders.</p>';
+                }
+
+                // Re-check alarms on any data change
+                checkReminders(); 
+
+            }, (error) => {
+                console.error("Error listening for reminders: ", error);
+                showAlert("Error", "Could not load reminders. " + error.message);
+            });
+        }
+        
+        /**
+         * Creates an HTML element for a folder.
+         */
+        function createFolderElement(folder) {
+            const el = document.createElement('div');
+            el.className = 'p-4 bg-gray-50 rounded-lg shadow-sm border border-gray-200 flex justify-between items-center cursor-pointer hover:bg-gray-100 transition';
+            el.innerHTML = `
+                <div class="flex items-center">
+                    <i class="ph ph-folder text-2xl text-indigo-500 mr-3"></i>
+                    <span class="font-medium text-gray-800">${folder.name}</span>
+                </div>
+                <button class="delete-folder-btn p-2 rounded-full text-gray-400 hover:bg-red-100 hover:text-red-600">
+                    <i class="ph ph-trash text-lg"></i>
+                </button>
+            `;
+            
+            // Click to open folder
+            el.addEventListener('click', (e) => {
+                if (!e.target.closest('.delete-folder-btn')) {
+                    showFilesView(folder);
+                }
+            });
+
+            // Click to delete
+            el.querySelector('.delete-folder-btn').addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const confirmed = await showConfirm(`Are you sure you want to delete the folder "${folder.name}"? This cannot be undone.`);
+                if (confirmed) {
+                    try {
+                        await deleteDoc(doc(getFoldersCollection(), folder.id));
+                        // TODO: In a real app, delete all sub-files first.
+                    } catch (error) {
+                        console.error("Error deleting folder: ", error);
+                        showAlert("Error", "Could not delete folder. " + error.message);
+                    }
+                }
+            });
+            return el;
+        }
+
+        /**
+         * Creates an HTML element for a file.
+         */
+        function createFileElement(file) {
+            const el = document.createElement('div');
+            el.className = 'p-4 bg-white rounded-lg shadow-sm border border-gray-200 flex justify-between items-center';
+            
+            let iconClass = 'ph-file';
+            let iconColor = 'text-gray-500';
+            switch (file.type) {
+                case 'pdf': iconClass = 'ph-file-pdf'; iconColor = 'text-red-500'; break;
+                case 'docx': iconClass = 'ph-file-doc'; iconColor = 'text-blue-500'; break;
+                case 'img': iconClass = 'ph-file-jpg'; iconColor = 'text-green-500'; break;
+                case 'txt': iconClass = 'ph-file-txt'; iconColor = 'text-gray-500'; break;
+            }
+
+            el.innerHTML = `
+                <div class="flex items-center truncate">
+                    <i class="ph ${iconClass} ${iconColor} text-2xl mr-3"></i>
+                    <div class="truncate">
+                        <span class="font-medium text-gray-800 truncate block">${file.name}</span>
+                        <span class="text-xs text-gray-500">Converted to: ${file.type.toUpperCase()}</span>
+                    </div>
+                </div>
+                <button class="delete-file-btn p-2 rounded-full text-gray-400 hover:bg-red-100 hover:text-red-600">
+                    <i class="ph ph-trash text-lg"></i>
+                </button>
+            `;
+            
+            // Click to delete
+            el.querySelector('.delete-file-btn').addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const confirmed = await showConfirm(`Are you sure you want to delete the file "${file.name}"?`);
+                if (confirmed) {
+                    try {
+                        await deleteDoc(doc(getFilesCollection(currentFolderId), file.id));
+                    } catch (error) {
+                        console.error("Error deleting file: ", error);
+                        showAlert("Error", "Could not delete file. " + error.message);
+                    }
+                }
+            });
+            return el;
+        }
+
+        /**
+         * Creates an HTML element for a reminder.
+         */
+        function createReminderElement(reminder) {
+            const el = document.createElement('div');
+            el.className = 'p-4 bg-white rounded-lg shadow-sm border border-gray-200 flex justify-between items-center';
+            
+            const dueDate = reminder.due.toDate();
+            const isOverdue = dueDate < new Date();
+            const formattedDate = dueDate.toLocaleString('en-US', { 
+                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+            });
+
+            el.innerHTML = `
+                <div class="flex items-center">
+                    <i class="ph ph-clock ${isOverdue ? 'text-red-500' : 'text-blue-500'} text-2xl mr-3"></i>
+                    <div>
+                        <span class="font-medium text-gray-800">${reminder.title}</span>
+                        <span class="block text-xs ${isOverdue ? 'text-red-600 font-medium' : 'text-gray-500'}">
+                            ${isOverdue ? 'Overdue: ' : 'Due: '}${formattedDate}
+                        </span>
+                    </div>
+                </div>
+                <button class="delete-reminder-btn p-2 rounded-full text-gray-400 hover:bg-red-100 hover:text-red-600">
+                    <i class="ph ph-trash text-lg"></i>
+                </button>
+            `;
+            
+            // Click to delete
+            el.querySelector('.delete-reminder-btn').addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const confirmed = await showConfirm(`Are you sure you want to delete the reminder "${reminder.title}"?`);
+                if (confirmed) {
+                    try {
+                        await deleteDoc(doc(getRemindersCollection(), reminder.id));
+                        alarmedReminders.delete(reminder.id); // Remove from alarm tracking
+                    } catch (error) {
+                        console.error("Error deleting reminder: ", error);
+                        showAlert("Error", "Could not delete reminder. " + error.message);
+                    }
+                }
+            });
+            return el;
+        }
+
+        /**
+         * Handles creation of a new folder.
+         */
+        async function handleCreateFolder() {
+            const folderName = ui.newFolderName.value.trim();
+            if (!folderName) {
+                showAlert("Invalid Name", "Please enter a folder name.");
+                return;
+            }
+
+            toggleButtonLoading(ui.createFolderBtn, null, ui.createFolderLoader, true);
+            
+            try {
+                await addDoc(getFoldersCollection(), {
+                    name: folderName,
+                    createdAt: Timestamp.now()
+                });
+                hideModal('new-folder-modal');
+                ui.newFolderName.value = '';
+            } catch (error) {
+                console.error("Error creating folder: ", error);
+                showAlert("Error", "Could not create folder. " + error.message);
+            } finally {
+                toggleButtonLoading(ui.createFolderBtn, null, ui.createFolderLoader, false);
+            }
+        }
+        
+        /**
+         * Handles creation of a new reminder.
+         */
+        async function handleSetReminder() {
+            const title = ui.reminderTitle.value.trim();
+            const datetime = ui.reminderDatetime.value;
+
+            if (!title || !datetime) {
+                showAlert("Missing Info", "Please enter a title and a due date/time.");
+                return;
+            }
+
+            const dueDate = new Date(datetime);
+            if (dueDate < new Date()) {
+                showAlert("Invalid Date", "Please select a time in the future.");
+                return;
+            }
+
+            toggleButtonLoading(ui.setReminderBtn, null, ui.setReminderLoader, true);
+            
+            try {
+                await addDoc(getRemindersCollection(), {
+                    title: title,
+                    due: Timestamp.fromDate(dueDate)
+                });
+                hideModal('add-reminder-modal');
+                ui.reminderTitle.value = '';
+                ui.reminderDatetime.value = '';
+            } catch (error) {
+                console.error("Error setting reminder: ", error);
+                showAlert("Error", "Could not set reminder. " + error.message);
+            } finally {
+                toggleButtonLoading(ui.setReminderBtn, null, ui.setReminderLoader, false);
+            }
+        }
+
+        /**
+         * Handles saving a new file (from import modal).
+         */
+        async function handleSaveFile() {
+            const folderId = currentFolderId || ui.importFolderSelect.value;
+            const fileName = ui.importFileName.value.trim();
+            const fileType = ui.importConvertType.value;
+            const file = ui.importFileInput.files[0];
+
+            if (!folderId) {
+                showAlert("Missing Folder", "Please select a destination folder.");
+                return;
+            }
+            if (!fileName) {
+                showAlert("Missing Name", "Please enter a name for your file.");
+                return;
+            }
+            if (!file) {
+                showAlert("Missing File", "Please select a file to import.");
+                return;
+            }
+
+            toggleButtonLoading(ui.saveFileBtn, ui.saveFileBtnText, ui.saveFileLoader, true);
+            
+            try {
+                // In a real app, you'd upload the file to Firebase Storage here
+                // and get a downloadURL.
+                // For this demo, we just save the metadata to Firestore.
+                
+                await addDoc(getFilesCollection(folderId), {
+                    name: fileName,
+                    type: fileType,
+                    originalFileName: file.name,
+                    createdAt: Timestamp.now(),
+                    // storagePath: "simulated/path/to/" + file.name 
+                });
+                
+                hideModal('quick-import-modal');
+                resetImportModal();
+                
+                // If we were in the folder view, we don't need to do anything
+                // If we were in the main folder list, stay there.
+                if (currentFolderId) {
+                    showFilesView({ id: currentFolderId, name: ui.currentFolderName.textContent });
+                }
+
+            } catch (error) {
+                console.error("Error saving file: ", error);
+                showAlert("Error", "Could not save file. " + error.message);
+            } finally {
+                toggleButtonLoading(ui.saveFileBtn, ui.saveFileBtnText, ui.saveFileLoader, false);
+            }
+        }
+        
+        /**
+         * Resets the import modal to its default state.
+         */
+        function resetImportModal() {
+            ui.importFolderSelect.value = '';
+            ui.importFileInput.value = '';
+            ui.importFileName.value = '';
+            ui.importConvertType.value = 'pdf';
+            ui.aiAnalysisResult.classList.add('hidden');
+            ui.aiSummaryText.textContent = '';
+        }
+
+        // =================================================================
+        // 5. ALARM & AUDIO FUNCTIONALITY
+        // =================================================================
+
+        /**
+         * Initializes the Web Audio API context.
+         */
+        function initAudio() {
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (e) {
+                console.warn("Web Audio API is not supported in this browser.");
+            }
+        }
+        
+        /**
+         * Plays the alarm beep sound twice.
+         */
+        function playBeepAlarm() {
+            if (!audioContext) return;
+
+            function playBeep(startTime) {
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(880, startTime); // A5 note
+                gainNode.gain.setValueAtTime(0.5, startTime);
+                
+                gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.3);
+                oscillator.start(startTime);
+                oscillator.stop(startTime + 0.3);
+            }
+
+            const now = audioContext.currentTime;
+            playBeep(now);      // First beep
+            playBeep(now + 0.5); // Second beep (0.5s later)
+        }
+
+        /**
+         * Checks all reminders to see if any are due.
+         */
+        function checkReminders() {
+            if (!reminderListener || !ui.reminderList.children.length) return; // No listener or no reminders
+
+            const now = new Date();
+            const q = query(getRemindersCollection(), where("due", "<=", Timestamp.now()));
+            
+            getDocs(q).then((snapshot) => {
+                snapshot.forEach((doc) => {
+                    const reminder = { id: doc.id, ...doc.data() };
+                    
+                    // Only trigger alarm once per reminder
+                    if (!alarmedReminders.has(reminder.id)) {
+                        alarmedReminders.add(reminder.id);
+                        
+                        // Show visual alarm
+                        document.getElementById('alarm-title').textContent = reminder.title;
+                        showModal('alarm-modal');
+                        
+                        // Play sound
+                        playBeepAlarm();
+
+                        // Hide visual alarm after 5 seconds
+                        setTimeout(() => {
+                            hideModal('alarm-modal');
+                        }, 5000);
+                    }
+                });
+            }).catch((error) => {
+                console.error("Error checking reminders: ", error);
+            });
+        }
+        
+        // =================================================================
+        // 6. GEMINI API & AI FUNCTIONALITY
+        // =================================================================
+        const GEMINI_API_KEY = ""; // Use API key from environment if available
+        const GEMINI_MODEL_TEXT = "gemini-2.5-flash-preview-09-2025";
+        const GEMINI_MODEL_IMAGE = "gemini-2.5-flash-preview-09-2025";
+        const GEMINI_MODEL_TTS = "gemini-2.5-flash-preview-tts";
+
+        /**
+         * Generic fetch function for Gemini API with exponential backoff.
+         */
+        async function fetchGeminiAPI(model, payload, retries = 3, delay = 1000) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    if (response.status === 429 && retries > 0) {
+                        // Throttled, retry with backoff
+                        await new Promise(res => setTimeout(res, delay));
+                        return fetchGeminiAPI(model, payload, retries - 1, delay * 2);
+                    }
+                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                }
+                return await response.json();
+
+            } catch (error) {
+                if (retries > 0) {
+                    // Network or other error, retry
+                    await new Promise(res => setTimeout(res, delay));
+                    return fetchGeminiAPI(model, payload, retries - 1, delay * 2);
+                }
+                console.error("Gemini API call failed:", error);
+                throw error; // Re-throw after all retries failed
+            }
+        }
+        
+        /**
+         * Handles the Study AI query.
+         */
+        async function handleStudyQuery() {
+            const query = ui.studyAiInput.value.trim();
+            if (!query) return;
+
+            toggleButtonLoading(ui.studyAiAskBtn, ui.studyAiAskBtnText, ui.studyAiAskLoader, true);
+            ui.studyAiResultContainer.classList.add('hidden');
+            ui.studyAiResult.textContent = '';
+            ui.studyAiSourcesList.innerHTML = '';
+            ui.studyAiSourcesContainer.classList.add('hidden');
+            ui.studyAiTtsBtn.classList.add('hidden');
+
+            const systemPrompt = "You are a friendly, knowledgeable student tutor. Your goal is to provide clear, accurate, and concise answers to academic questions. Use simple language where possible and format the response for readability. Do not use markdown.";
+            
+            const payload = {
+                contents: [{ parts: [{ text: query }] }],
+                tools: [{ "google_search": {} }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+            };
+
+            try {
+                const result = await fetchGeminiAPI(GEMINI_MODEL_TEXT, payload);
+                const candidate = result.candidates?.[0];
+                
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    const text = candidate.content.parts[0].text;
+                    ui.studyAiResult.textContent = text;
+                    ui.studyAiResultContainer.classList.remove('hidden');
+                    ui.studyAiTtsBtn.classList.remove('hidden'); // Show TTS button
+
+                    // Process grounding sources
+                    const groundingMetadata = candidate.groundingMetadata;
+                    if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                        const sources = groundingMetadata.groundingAttributions
+                            .map(attr => attr.web)
+                            .filter(web => web && web.uri && web.title);
+                        
+                        if (sources.length > 0) {
+                            sources.forEach(source => {
+                                const li = document.createElement('li');
+                                li.innerHTML = `<a href="${source.uri}" target="_blank" rel="noopener noreferrer" class="hover:underline">${source.title}</a>`;
+                                ui.studyAiSourcesList.appendChild(li);
+                            });
+                            ui.studyAiSourcesContainer.classList.remove('hidden');
+                        }
+                    }
+                } else {
+                    ui.studyAiResult.textContent = "Sorry, I couldn't find an answer for that.";
+                    ui.studyAiResultContainer.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error("Error fetching Gemini response: ", error);
+                ui.studyAiResult.textContent = `Error: ${error.message}. Please check your connection or API key.`;
+                ui.studyAiResultContainer.classList.remove('hidden');
+            } finally {
+                toggleButtonLoading(ui.studyAiAskBtn, ui.studyAiAskBtnText, ui.studyAiAskLoader, false);
+            }
+        }
+
+        /**
+         * Handles file selection for AI analysis.
+         */
+        async function handleFileSelectionForAnalysis(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            toggleButtonLoading(ui.analyzeContentBtn, ui.analyzeContentBtnText, ui.analyzeContentLoader, true);
+            ui.aiAnalysisResult.classList.add('hidden');
+
+            try {
+                const base64Data = await base64EncodeImage(file);
+                const result = await analyzeFileContent(base64Data);
+                
+                if (result.suggestedName) {
+                    ui.importFileName.value = result.suggestedName;
+                }
+                if (result.summary) {
+                    ui.aiSummaryText.textContent = result.summary;
+                    ui.aiAnalysisResult.classList.remove('hidden');
+                }
+
+            } catch (error) {
+                console.error("Error analyzing file: ", error);
+                showAlert("AI Analysis Failed", error.message);
+            } finally {
+                toggleButtonLoading(ui.analyzeContentBtn, ui.analyzeContentBtnText, ui.analyzeContentLoader, false);
+            }
+        }
+
+        /**
+         * Converts an image file to Base64.
+         */
+        function base64EncodeImage(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    // Get only the Base64 data part
+                    const base64Data = reader.result.split(',')[1];
+                    resolve(base64Data);
+                };
+                reader.onerror = (error) => reject(error);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        /**
+         * Calls Gemini API to analyze image content.
+         */
+        async function analyzeFileContent(base64ImageData) {
+            const prompt = `Analyze this image, which is a photo of academic material (like notes, a whiteboard, or a textbook page).
+            Provide a response in JSON format with two keys:
+            1. "suggestedName": A concise, snake_case filename (e.g., "bio_mitochondria_diagram").
+            2. "summary": A brief, one-sentence summary of the content.
+            
+            Example response:
+            {
+              "suggestedName": "physics_kinematics_equations",
+              "summary": "A list of key kinematic equations for constant acceleration."
+            }
+            `;
+            
+            const payload = {
+                contents: [{
+                    parts: [
+                        { text: prompt },
+                        { inlineData: { mimeType: "image/jpeg", data: base64ImageData } }
+                    ]
+                }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                }
+            };
+            
+            const result = await fetchGeminiAPI(GEMINI_MODEL_IMAGE, payload);
+            const candidate = result.candidates?.[0];
+
+            if (candidate && candidate.content?.parts?.[0]?.text) {
+                try {
+                    // The API returns a string, which we need to parse as JSON
+                    return JSON.parse(candidate.content.parts[0].text);
+                } catch (e) {
+                    console.error("Failed to parse JSON response from AI: ", e);
+                    throw new Error("AI returned an invalid format.");
+                }
+            } else {
+                throw new Error("No valid response from AI.");
+            }
+        }
+        
+        /**
+         * Handles "Read Aloud" TTS functionality.
+         */
+        async function speakResult() {
+            const text = ui.studyAiResult.textContent;
+            if (!text) return;
+
+            toggleButtonLoading(ui.studyAiTtsBtn, ui.studyAiTtsBtnText, ui.studyAiTtsLoader, true);
+            
+            const payload = {
+                contents: [{ parts: [{ text: `Say clearly: ${text}` }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } }
+                    }
+                },
+                model: "gemini-2.5-flash-preview-tts"
+            };
+
+            try {
+                const result = await fetchGeminiAPI(GEMINI_MODEL_TTS, payload);
+                const part = result?.candidates?.[0]?.content?.parts?.[0];
+                const audioData = part?.inlineData?.data;
+                const mimeType = part?.inlineData?.mimeType; // e.g., "audio/L16;rate=24000"
+
+                if (audioData && mimeType && mimeType.startsWith("audio/")) {
+                    const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
+                    const pcmData = base64ToArrayBuffer(audioData);
+                    const pcm16 = new Int16Array(pcmData);
+                    const wavBlob = pcmToWav(pcm16, 1, sampleRate); // 1 channel
+                    const audioUrl = URL.createObjectURL(wavBlob);
+                    
+                    const audio = new Audio(audioUrl);
+                    audio.play();
+                    
+                    audio.onended = () => {
+                        toggleButtonLoading(ui.studyAiTtsBtn, ui.studyAiTtsBtnText, ui.studyAiTtsLoader, false);
+                    };
+
+                } else {
+                    throw new Error("Invalid audio data received.");
+                }
+
+            } catch (error) {
+                console.error("Error with TTS: ", error);
+                showAlert("Read Aloud Failed", error.message);
+                toggleButtonLoading(ui.studyAiTtsBtn, ui.studyAiTtsBtnText, ui.studyAiTtsLoader, false);
+            }
+        }
+
+        // --- TTS Audio Helper Functions ---
+        
+        function base64ToArrayBuffer(base64) {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function pcmToWav(pcmData, numChannels, sampleRate) {
+            const buffer = new ArrayBuffer(44 + pcmData.length * 2);
+            const view = new DataView(buffer);
+
+            // RIFF header
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + pcmData.length * 2, true);
+            writeString(view, 8, 'WAVE');
+            // 'fmt ' chunk
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true); // PCM
+            view.setUint16(22, numChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * numChannels * 2, true); // byteRate
+            view.setUint16(32, numChannels * 2, true); // blockAlign
+            view.setUint16(34, 16, true); // bitsPerSample
+            // 'data' chunk
+            writeString(view, 36, 'data');
+            view.setUint32(40, pcmData.length * 2, true);
+
+            // Write PCM data
+            for (let i = 0; i < pcmData.length; i++) {
+                view.setInt16(44 + i * 2, pcmData[i], true);
+            }
+
+            return new Blob([view], { type: 'audio/wav' });
+        }
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+        
+
+        // =================================================================
+        // 7. INITIALIZATION & EVENT LISTENERS
+        // =================================================================
+
+        /**
+         * Main app initialization.
+         */
+        async function initializeAppAndAuth() {
+            if (!isFirebaseAvailable) {
+                console.warn("Firebase config is missing. Running in OFFLINE MODE.");
+                ui.offlineWarning.classList.remove('hidden');
+                ui.initializingView.classList.add('hidden');
+                // Still show the UI, but data features will be disabled
+                showSection('files-section');
+                return;
+            }
+
+            try {
+                setLogLevel('debug'); // Enable Firestore logging
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Listen for auth state changes
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        // User is signed in
+                        console.log("User signed in with ID: ", user.uid);
+                        userId = user.uid;
+                        ui.userIdDisplay.textContent = `User ID: ${user.uid.substring(0, 6)}...`;
+                        
+                        // User is authenticated, now load data
+                        loadDataListeners();
+                        
+                        // Show the main files section
+                        ui.initializingView.classList.add('hidden');
+                        ui.authErrorWarning.classList.add('hidden');
+                        showSection('files-section');
+                        
+                    } else {
+                        // User is signed out, attempt to sign in
+                        console.log("No user signed in, attempting anonymous sign-in...");
+                        signInAnonymously(auth).catch((error) => {
+                            console.error("Anonymous sign-in failed: ", error);
+                            ui.authErrorMessage.textContent = `Anonymous sign-in failed: ${error.message}. Please check your Firebase Authentication rules.`;
+                            ui.authErrorWarning.classList.remove('hidden');
+                            ui.initializingView.classList.add('hidden');
+                        });
+                    }
+                });
+
+                // Initial sign-in attempt
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    // This will be caught by the onAuthStateChanged listener
+                    await signInAnonymously(auth);
+                }
+                
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                ui.authErrorMessage.textContent = `Firebase init failed: ${error.message}. Check your Firebase config.`;
+                ui.authErrorWarning.classList.remove('hidden');
+                ui.initializingView.classList.add('hidden');
+            }
+        }
+        
+        /**
+         * Attaches listeners after auth is successful.
+         */
+        function loadDataListeners() {
+            if (!userId) return; // Safety check
+            
+            // Detach any existing listeners before attaching new ones
+            if (folderListener) folderListener();
+            if (fileListener) fileListener();
+            if (reminderListener) reminderListener();
+            
+            // Attach new listeners
+            listenForFolders();
+            listenForReminders();
+            
+            // Start checking for alarms
+            setInterval(checkReminders, 60000); // Check every minute
+            initAudio(); // Init audio context on first user interaction
+        }
+
+        /**
+         * Attaches all static event listeners.
+         */
+        function setupEventListeners() {
+            // Navigation
+            ui.navButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    showSection(btn.dataset.section);
+                });
+            });
+
+            // File/Folder Views
+            ui.backToFoldersBtn.addEventListener('click', showFoldersView);
+
+            // New Folder Modal
+            ui.newFolderBtn.addEventListener('click', () => {
+                ui.newFolderName.value = '';
+                showModal('new-folder-modal');
+            });
+            ui.createFolderBtn.addEventListener('click', handleCreateFolder);
+
+            // Add Reminder Modal
+            ui.addReminderBtn.addEventListener('click', () => {
+                ui.reminderTitle.value = '';
+                ui.reminderDatetime.value = '';
+                showModal('add-reminder-modal');
+            });
+            ui.setReminderBtn.addEventListener('click', handleSetReminder);
+            
+            // Quick Import Modal
+            ui.quickImportBtn.addEventListener('click', () => {
+                resetImportModal();
+                // Ensure the folder select is populated
+                listenForFolders(); 
+                showModal('quick-import-modal');
+            });
+            ui.importToFolderBtn.addEventListener('click', () => {
+                resetImportModal();
+                // Pre-select the current folder
+                ui.importFolderSelect.value = currentFolderId;
+                showModal('quick-import-modal');
+            });
+            ui.saveFileBtn.addEventListener('click', handleSaveFile);
+            
+            // AI Features
+            ui.importFileInput.addEventListener('change', handleFileSelectionForAnalysis);
+            ui.analyzeContentBtn.addEventListener('click', () => {
+                // Trigger file selection if not already selected
+                if (!ui.importFileInput.files[0]) {
+                    ui.importFileInput.click();
+                } else {
+                    // If file is already selected, just re-trigger analysis
+                    handleFileSelectionForAnalysis({ target: ui.importFileInput });
+                }
+            });
+
+            ui.studyAiAskBtn.addEventListener('click', handleStudyQuery);
+            ui.studyAiInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') handleStudyQuery();
+            });
+            ui.studyAiTtsBtn.addEventListener('click', speakResult);
+
+            // Init audio on first click anywhere
+            document.body.addEventListener('click', initAudio, { once: true });
+        }
+
+        // =================================================================
+        // 8. APP START
+        // =================================================================
+        
+        // Wait for the DOM to be fully loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            setupEventListeners();
+            initializeAppAndAuth();
+        });
+
+    </script>
 </body>
 </html>
+
 
 
