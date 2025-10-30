@@ -1,407 +1,531 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-gray-100">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Student Organizer</title>
-    <!-- 1. Tailwind CSS -->
+    <!--
+      Tailwind CSS for styling.
+      In a production app, this would be installed via NPM and processed.
+      Using the Play CDN for simplicity.
+    -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 2. Phosphor Icons -->
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    <!-- 3. Tailwind Config (for Inter font) -->
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    },
-                    animation: {
-                        'pulse-fast': 'pulse 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-                        'spin-slow': 'spin 3s linear infinite',
-                        'ping-slow': 'ping 2s cubic-bezier(0, 0, 0.2, 1) infinite',
-                    }
-                }
-            }
-        }
-    </script>
-    <!-- 4. PWA Manifest Link -->
+    <!--
+      Inter font, a clean, modern font for the UI.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!--
+      Lucide icons for a consistent icon set.
+    -->
+    <script src="https://unpkg.com/lucide-react@latest/dist/lucide-react.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+    <!--
+      PWA Support: Link to the Web Manifest file
+    -->
     <link rel="manifest" href="manifest.json">
+    <!-- PWA Theme Color (for mobile browser chrome) -->
+    <meta name="theme-color" content="#4f46e5">
+
     <style>
-        /* Basic scrollbar styling */
-        ::-webkit-scrollbar {
+        /* Base styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none; /* Prevents "pull-to-refresh" on mobile */
+        }
+
+        /* Custom scrollbar for a cleaner look */
+        .custom-scrollbar::-webkit-scrollbar {
             width: 6px;
-            height: 6px;
         }
-        ::-webkit-scrollbar-track {
-            background: #f1f1f1;
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 10px;
         }
-        ::-webkit-scrollbar-thumb {
-            background: #c5c5c5;
-            border-radius: 3px;
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
         }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #a8a8a8;
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
         }
-        /* Style for the file input */
-        .file-input-wrapper {
-            position: relative;
-            overflow: hidden;
-            display: inline-block;
-        }
-        .file-input-wrapper input[type=file] {
-            font-size: 100px;
-            position: absolute;
-            left: 0;
-            top: 0;
+
+        /* Hide the default file input */
+        .file-input-hidden {
+            width: 0.1px;
+            height: 0.1px;
             opacity: 0;
+            overflow: hidden;
+            position: absolute;
+            z-index: -1;
+        }
+        
+        /* Custom file input label */
+        .file-input-label {
             cursor: pointer;
+            display: inline-block;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            background-color: #f1f5f9;
+            color: #334155;
+            font-weight: 500;
+            transition: background-color 0.2s;
         }
-        /* Custom styles for the app */
-        body, html {
-            overscroll-behavior-y: contain; /* Prevents pull-to-refresh on the whole page */
+        .file-input-label:hover {
+            background-color: #e2e8f0;
         }
-        .app-container {
-            max-width: 500px;
+
+        /* Loading spinner animation */
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #4f46e5;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Styling for the main app container on mobile */
+        #app-container {
+            width: 100%;
             height: 100vh;
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
         }
-        /* Custom alarm notification */
-        #alarm-notification {
-            transition: transform 0.5s ease-in-out, opacity 0.5s ease;
-            transform: translateY(-100%);
-            opacity: 0;
-        }
-        #alarm-notification.show {
-            transform: translateY(0);
-            opacity: 1;
-        }
-        /* Custom checklist style for reminders */
-        .subtask-list li {
-            position: relative;
-            padding-left: 24px;
-            font-size: 13px;
-            color: #4a5568; /* text-gray-700 */
-        }
-        .subtask-list li::before {
-            content: '\2713'; /* Checkmark */
-            position: absolute;
-            left: 0;
-            top: 1px;
-            color: #48bb78; /* text-green-500 */
-            font-weight: bold;
-            font-size: 14px;
+
+        /* On larger screens, simulate a mobile phone frame */
+        @media (min-width: 640px) {
+            body {
+                background-color: #e5e7eb; /* Light gray background */
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 2rem;
+            }
+            #app-container {
+                max-width: 420px; /* Typical phone width */
+                max-height: 850px; /* Typical phone height */
+                border-radius: 2rem;
+                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+                border: 8px solid #111827; /* Phone bezel */
+                position: relative;
+            }
         }
     </style>
 </head>
-<body class="h-full flex items-center justify-center bg-gray-200 font-sans antialiased p-0 m-0">
+<body class="bg-white">
 
-    <!-- App Container -->
-    <div class="app-container relative w-full h-full bg-white">
+    <!-- 
+      Main Application Container
+      This div contains the entire app UI.
+    -->
+    <div id="app-container" class="bg-slate-50">
 
-        <!-- Header -->
-        <header class="bg-indigo-600 text-white p-4 flex justify-between items-center z-20 shadow-md">
-            <div>
-                <h1 class="text-xl font-bold">Student Organizer</h1>
-                <p id="user-id-display" class="text-xs text-indigo-200">User ID: N/A</p>
+        <!-- 
+          App Header
+          Contains the title, user ID, and new reminder button.
+        -->
+        <header class="bg-indigo-600 text-white p-4 shadow-md z-10 rounded-t-2xl">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-xl font-bold">Student Organizer</h1>
+                    <p id="user-id-display" class="text-xs text-indigo-200">User ID: N/A</p>
+                </div>
+                <!-- New Reminder Button -->
+                <button id="show-reminder-modal-btn" class="bg-indigo-500 hover:bg-indigo-400 text-white p-2 rounded-full shadow-lg transition duration-200">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                </button>
             </div>
-            <button id="add-reminder-btn" class="p-2 rounded-full bg-indigo-500 hover:bg-indigo-400 focus:outline-none focus:ring-2 focus:ring-white">
-                <i class="ph ph-plus text-2xl"></i>
-            </button>
         </header>
 
-        <!-- Main Content (Scrollable) -->
-        <main class="flex-1 overflow-y-auto bg-gray-100 p-4 pb-20">
-            
-            <!-- Offline/Error Warning -->
-            <div id="offline-warning" class="hidden bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded-md" role="alert">
-                <p class="font-bold">Offline Mode</p>
-                <p id="offline-message">Firebase is not configured. Folders, files, and reminders cannot be saved.</p>
-            </div>
-            
-            <!-- Loading Indicator -->
-            <div id="loading-indicator" class="flex flex-col items-center justify-center h-full">
-                <i class="ph ph-spinner text-4xl text-indigo-500 animate-spin"></i>
-                <p id="loading-text" class="text-gray-600 mt-2">Initializing views...</p>
-            </div>
-            
-            <!-- App Content (Hidden by default) -->
-            <div id="app-content" class="hidden">
-                <!-- ======================= -->
-                <!-- 1. Files Section        -->
-                <!-- ======================= -->
-                <section id="files-section">
-                    <!-- View 1: Folder List -->
-                    <div id="folder-list-view">
-                        <div class="flex justify-between items-center mb-4">
-                            <h2 class="text-lg font-semibold text-gray-800">Folders</h2>
-                            <div>
-                                <button id="quick-import-btn" class="text-sm bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg font-medium hover:bg-indigo-200 shadow-sm">
-                                    <i class="ph ph-upload-simple align-middle mr-1"></i>
-                                    Quick Import
-                                </button>
-                                <button id="new-folder-btn" class="text-sm bg-indigo-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-indigo-700 shadow-sm">
-                                    <i class="ph ph-folder-plus align-middle mr-1"></i>
-                                    New Folder
-                                </button>
-                            </div>
-                        </div>
-                        <div id="folder-list" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                            <!-- Folder items will be injected here -->
-                        </div>
-                        <div id="no-folders-message" class="hidden text-center text-gray-500 mt-10">
-                            <i class="ph ph-folder-notch-open text-5xl text-gray-400"></i>
-                            <p class="mt-2">No folders found.</p>
-                            <p class="text-sm">Click "New Folder" to get started!</p>
-                        </div>
-                    </div>
+        <!-- 
+          Offline/Error Warning Banner
+          Hidden by default, shown if Firebase fails or is unavailable.
+        -->
+        <div id="offline-warning" class="hidden bg-red-100 border-l-4 border-red-500 text-red-700 p-4" role="alert">
+            <p class="font-bold">Offline Mode</p>
+            <p id="offline-message">Firebase is not connected. Data will not be saved.</p>
+        </div>
 
-                    <!-- View 2: File List (Inside a folder) -->
-                    <div id="file-list-view" class="hidden">
-                        <div class="flex justify-between items-center mb-4">
-                            <button id="back-to-folders-btn" class="flex items-center text-gray-600 hover:text-indigo-600">
-                                <i class="ph ph-arrow-left text-lg mr-2"></i>
-                                <span id="current-folder-name" class="text-lg font-semibold text-gray-800">Folder Name</span>
-                            </button>
-                            <button id="import-file-to-folder-btn" class="text-sm bg-indigo-600 text-white px-3 py-2 rounded-lg font-medium hover:bg-indigo-700 shadow-sm">
-                                <i class="ph ph-upload-simple align-middle mr-1"></i>
-                                Import
-                            </button>
-                        </div>
-                        <div id="file-list" class="space-y-3">
-                            <!-- File items will be injected here -->
-                        </div>
-                         <div id="no-files-message" class="hidden text-center text-gray-500 mt-10">
-                            <i class="ph ph-file-dashed text-5xl text-gray-400"></i>
-                            <p class="mt-2">This folder is empty.</p>
-                            <p class="text-sm">Click "Import" to add files.</p>
-                        </div>
-                    </div>
-                </section>
+        <!-- 
+          App Navigation
+          Tabs to switch between Files, Reminders, and Study AI.
+        -->
+        <nav class="flex justify-around bg-white shadow-sm border-b border-slate-200">
+            <button data-tab="files" class="nav-tab flex-1 py-4 px-6 text-center font-medium text-indigo-600 border-b-2 border-indigo-600">
+                Files
+            </button>
+            <button data-tab="reminders" class="nav-tab flex-1 py-4 px-6 text-center font-medium text-slate-500 hover:text-indigo-600">
+                Reminders
+            </button>
+            <button data-tab="study-ai" class="nav-tab flex-1 py-4 px-6 text-center font-medium text-slate-500 hover:text-indigo-600">
+                ✨ Study AI
+            </button>
+        </nav>
 
-                <!-- ======================= -->
-                <!-- 2. Reminders Section    -->
-                <!-- ======================= -->
-                <section id="reminders-section" class="hidden">
-                    <h2 class="text-lg font-semibold text-gray-800 mb-4">Upcoming Reminders</h2>
-                    <div id="reminders-list" class="space-y-3">
-                        <!-- Reminder items will be injected here -->
-                        <!-- Example: 
-                        <div class="reminder-item bg-white p-4 rounded-lg shadow-sm">
-                            <div class="flex justify-between items-center">
-                                <div>
-                                    <span class="text-sm font-medium text-gray-800 block">Submit Physics Lab</span>
-                                    <span class="text-xs text-gray-500">Oct 30, 2025, 2:00 PM</span>
-                                </div>
-                                <button class="delete-reminder-btn text-gray-400 hover:text-red-500" data-reminder-id="123">
-                                    <i class="ph ph-trash"></i>
-                                </button>
+        <!-- 
+          Main Content Area
+          This is where the tab content will be dynamically loaded.
+        -->
+        <main class="flex-1 overflow-y-auto custom-scrollbar p-4 bg-slate-50">
+
+            <!-- 
+              Initialization View
+              Shown on first load while connecting to Firebase.
+            -->
+            <div id="initializing-view" class="text-center p-8">
+                <div class="spinner mx-auto"></div>
+                <p class="mt-4 text-slate-600">Initializing views...</p>
+            </div>
+
+            <!-- 
+              Files Tab Section (Default)
+            -->
+            <section id="files-section" class="tab-content hidden">
+                <!-- 
+                  File View: This view shows the list of files *inside* a selected folder.
+                  It is hidden by default.
+                -->
+                <div id="file-list-view" class="hidden">
+                    <div class="flex justify-between items-center mb-4">
+                        <button id="back-to-folders-btn" class="flex items-center text-indigo-600 hover:underline">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1"><path d="m15 18-6-6 6-6"/></svg>
+                            Back
+                        </button>
+                        <button id="show-import-modal-from-file-view-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm transition duration-200">
+                            Import File
+                        </button>
+                    </div>
+                    <h2 id="current-folder-name" class="text-2xl font-bold text-slate-800 mb-4"></h2>
+                    <div id="file-list-container" class="space-y-3">
+                        <!-- File items will be dynamically inserted here -->
+                        <!-- 
+                        Example file item:
+                        <div class="file-item bg-white p-4 rounded-lg shadow-sm flex justify-between items-center cursor-pointer hover:bg-slate-50" data-url="...">
+                            <div class="flex items-center">
+                                <svg ...>...</svg> <!-- Icon -->
+                                <span class="ml-3 font-medium text-slate-700">file_name.pdf</span>
                             </div>
-                            <div class="mt-3 pt-3 border-t border-gray-100">
-                                <h4 class="text-xs font-semibold text-gray-600 mb-1">Sub-tasks:</h4>
-                                <ul class="list-none space-y-1 subtask-list">
-                                    <li>Review lab manual</li>
-                                    <li>Complete calculations</li>
-                                    <li>Write conclusion</li>
-                                </ul>
-                            </div>
+                            <svg ...>...</svg> <!-- Chevron right -->
                         </div>
                         -->
                     </div>
-                    <div id="no-reminders-message" class="hidden text-center text-gray-500 mt-10">
-                        <i class="ph ph-bell-simple-slash text-5xl text-gray-400"></i>
-                        <p class="mt-2">No reminders set.</p>
-                        <p class="text-sm">Click the "+" icon in the header to add one.</p>
+                    <p id="no-files-message" class="hidden text-center text-slate-500 py-8">No files in this folder.</p>
+                </div>
+
+                <!-- 
+                  Folder View: This view shows the list of all folders (root view).
+                  It is hidden by default, but will be shown first.
+                -->
+                <div id="folder-list-view">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-bold text-slate-800">My Folders</h2>
+                        <div class="flex space-x-2">
+                            <button id="show-quick-import-modal-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm transition duration-200">
+                                Quick Import
+                            </button>
+                            <button id="show-folder-modal-btn" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-2 px-4 rounded-lg transition duration-200">
+                                New Folder
+                            </button>
+                        </div>
                     </div>
-                </section>
+                    <div id="folder-list-container" class="space-y-3">
+                        <!-- Folder items will be dynamically inserted here -->
+                        <!-- 
+                        Example folder item:
+                        <div class="folder-item bg-white p-4 rounded-lg shadow-sm flex justify-between items-center cursor-pointer hover:bg-slate-50" data-id="folderId">
+                            <div class="flex items-center">
+                                <svg ...>...</svg> <!-- Folder Icon -->
+                                <span class="ml-3 font-medium text-slate-700">Folder Name</span>
+                            </div>
+                            <button class="delete-folder-btn text-red-400 hover:text-red-600" data-id="folderId">
+                                <svg ...>...</svg> <!-- Delete Icon -->
+                            </button>
+                        </div>
+                        -->
+                    </div>
+                    <p id="no-folders-message" class="hidden text-center text-slate-500 py-8">No folders found. Create one to get started.</p>
+                </div>
+            </section>
+
+            <!-- 
+              Reminders Tab Section
+            -->
+            <section id="reminders-section" class="tab-content hidden">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">My Reminders</h2>
+                <div id="reminders-list-container" class="space-y-4">
+                    <!-- Reminder items will be dynamically inserted here -->
+                    <!-- 
+                    Example reminder item:
+                    <div class="bg-white p-4 rounded-lg shadow-sm relative">
+                        <button class="delete-reminder-btn ...">...</button>
+                        <p class="font-semibold text-slate-800">Reminder Title</p>
+                        <p class="text-sm text-slate-500">Due: ...</p>
+                        <div class="mt-2 pl-4 border-l-2 border-indigo-200 space-y-1">
+                            <p class...>- Sub-task 1</p>
+                            <p class...>- Sub-task 2</p>
+                        </div>
+                    </div>
+                    -->
+                </div>
+                <p id="no-reminders-message" class="hidden text-center text-slate-500 py-8">No reminders set.</p>
+            </section>
+
+            <!-- 
+              Study AI Tab Section
+            -->
+            <section id="study-ai-section" class="tab-content hidden">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">✨ Study AI Assistant</h2>
                 
-                <!-- ======================= -->
-                <!-- 3. Study AI Section     -->
-                <!-- ======================= -->
-                <section id="study-ai-section" class="hidden">
-                    <h2 class="text-lg font-semibold text-gray-800 mb-2">✨ Study AI Assistant</h2>
-                    <p class="text-sm text-gray-600 mb-4">Ask complex questions, get study tips, or summarize concepts. Powered by Gemini & Google Search.</p>
+                <!-- AI Image Upload Section -->
+                <div class="mb-4">
+                    <input type="file" id="study-ai-image-input" class="file-input-hidden" accept="image/*">
+                    <div class="flex items-center space-x-2">
+                        <label for="study-ai-image-input" class="file-input-label !py-2 !px-3">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-600"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                        </label>
+                        <span id="study-ai-image-filename" class="text-sm text-slate-500 italic">Upload an image (optional)</span>
+                    </div>
+                    <img id="study-ai-image-preview" src="" alt="Image preview" class="hidden rounded-lg mt-2 max-h-48 w-auto"/>
+                </div>
 
-                    <div class="flex space-x-2 mb-4">
-                        <input type="text" id="study-ai-input" placeholder="e.g., Explain the Krebs cycle" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <button id="study-ai-submit-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 shadow-sm">
-                            Ask
-                        </button>
+                <!-- AI Query Input -->
+                <div class="flex space-x-2">
+                    <input type="text" id="study-ai-input" class="flex-1 p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Ask about the image or just ask a question...">
+                    <button id="study-ai-ask-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-5 rounded-lg shadow-sm transition duration-200">
+                        Ask
+                    </button>
+                </div>
+                
+                <!-- AI Response Area -->
+                <div class="mt-6">
+                    <h3 id="study-ai-result-header" class="font-semibold text-lg text-slate-800 hidden">Result:</h3>
+                    
+                    <!-- AI TTS (Text-to-Speech) Button -->
+                    <button id="study-ai-speak-btn" class="hidden my-2 flex items-center space-x-1 text-sm text-indigo-600 font-medium hover:underline">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                        <span id="study-ai-speak-btn-text">Read Aloud</span>
+                        <div id="study-ai-speak-btn-spinner" class="spinner !w-4 !h-4 !border-2 hidden"></div>
+                    </button>
+
+                    <!-- Loading Indicator -->
+                    <div id="study-ai-loading" class="hidden text-center p-4">
+                        <div class="spinner mx-auto"></div>
+                        <p class="mt-2 text-slate-600">Thinking...</p>
                     </div>
 
-                    <div id="study-ai-loading" class="hidden flex items-center justify-center py-6">
-                        <i class="ph ph-spinner text-2xl text-indigo-500 animate-spin mr-2"></i>
-                        <span class="text-gray-600">The AI is thinking...</span>
-                    </div>
+                    <!-- Response Content -->
+                    <div id="study-ai-output" class="prose prose-sm mt-2 max-w-none text-slate-700"></div>
 
-                    <div id="study-ai-result-container" class="hidden">
-                        <div class="flex justify-between items-center">
-                             <h3 class="text-md font-semibold text-gray-800 mb-2">Result:</h3>
-                             <button id="study-ai-speak-btn" class="hidden text-sm text-indigo-600 font-medium hover:text-indigo-800">
-                                <i class="ph ph-speaker-high align-middle mr-1"></i>
-                                <span id="study-ai-speak-btn-text">Read Aloud</span>
-                             </button>
-                        </div>
-                        <div id="study-ai-result-text" class="bg-white p-4 rounded-lg shadow-sm text-gray-700 text-sm space-y-3 whitespace-pre-wrap"></div>
-                        
-                        <h4 class="text-xs font-semibold text-gray-600 uppercase mt-4 mb-2">Sources:</h4>
-                        <div id="study-ai-sources" class="text-xs space-y-1">
-                            <!-- Sources injected here -->
-                        </div>
+                    <!-- Citations/Sources -->
+                    <div id="study-ai-sources" class="mt-4 hidden">
+                        <h4 class="font-semibold text-sm text-slate-600">Sources:</h4>
+                        <ul id="study-ai-sources-list" class="list-disc list-inside text-sm mt-1 space-y-1">
+                            <!-- Sources will be injected here -->
+                        </ul>
                     </div>
-                </section>
-            </div>
+                </div>
+            </section>
         </main>
-
-        <!-- Bottom Navigation -->
-        <nav class="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around shadow-inner z-20">
-            <button class="nav-btn flex-1 py-3 px-2 text-center text-indigo-600" data-section="files-section">
-                <i class="ph ph-files text-2xl"></i>
-                <span class="text-xs block">Files</span>
-            </button>
-            <button class="nav-btn flex-1 py-3 px-2 text-center text-gray-500" data-section="reminders-section">
-                <i class="ph ph-bell-simple text-2xl"></i>
-                <span class="text-xs block">Reminders</span>
-            </button>
-            <button class="nav-btn flex-1 py-3 px-2 text-center text-gray-500" data-section="study-ai-section">
-                <i class="ph ph-brain text-2xl"></i>
-                <span class="text-xs block">Study AI</span>
-            </button>
-        </nav>
     </div>
 
-    <!-- ======================= -->
-    <!-- Modals (Hidden by default) -->
-    <!-- ======================= -->
-    
-    <!-- 1. General Modal Wrapper (for backdrop) -->
-    <div id="modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50 z-30 hidden" onclick="hideAllModals()"></div>
+    <!-- 
+      MODALS
+      These are hidden overlays for specific actions.
+    -->
 
-    <!-- 2. Create New Folder Modal -->
-    <div id="new-folder-modal" class="fixed bottom-0 left-0 right-0 w-full max-w-lg mx-auto bg-white p-6 rounded-t-2xl shadow-lg z-40 transform translate-y-full transition-transform duration-300">
-        <h3 class="text-lg font-semibold text-gray-900 mb-4">Create New Folder</h3>
-        <input type="text" id="new-folder-name" placeholder="e.g., 'Physics Notes'" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4">
-        <div class="flex justify-end space-x-2">
-            <button onclick="hideModal('new-folder-modal')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Cancel</button>
-            <button id="create-folder-confirm-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Create</button>
-        </div>
-    </div>
-
-    <!-- 3. Add Reminder Modal -->
-    <div id="add-reminder-modal" class="fixed bottom-0 left-0 right-0 w-full max-w-lg mx-auto bg-white p-6 rounded-t-2xl shadow-lg z-40 transform translate-y-full transition-transform duration-300">
-        <h3 class="text-lg font-semibold text-gray-900 mb-4">Set Reminder / Alarm</h3>
-        
-        <!-- Reminder Title Input -->
-        <label for="new-reminder-title" class="block text-sm font-medium text-gray-700 mb-1">Task Title</label>
-        <div class="flex space-x-2 mb-4">
-            <input type="text" id="new-reminder-title" placeholder="e.g., 'Study for finals'" class="flex-1 w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            <button id="breakdown-task-btn" class="p-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200" title="Break Down Task">
-                <i id="breakdown-task-icon" class="ph ph-sparkle text-xl"></i>
-                <i id="breakdown-task-spinner" class="ph ph-spinner text-xl animate-spin hidden"></i>
-            </button>
-        </div>
-
-        <!-- AI Sub-task Results -->
-        <div id="subtask-container" class="hidden bg-gray-50 border border-gray-200 p-3 rounded-lg mb-4">
-            <h4 class="text-xs font-semibold text-gray-600 mb-2">Suggested Sub-tasks:</h4>
-            <ul id="subtask-preview-list" class="list-none space-y-1 subtask-list">
-                <!-- Sub-tasks will be injected here -->
-            </ul>
-        </div>
-        
-        <!-- Reminder Time Input -->
-        <label for="new-reminder-time" class="block text-sm font-medium text-gray-700 mb-1">Due Date & Time</label>
-        <input type="datetime-local" id="new-reminder-time" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4">
-        
-        <div class="flex justify-end space-x-2">
-            <button onclick="hideModal('add-reminder-modal')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Cancel</button>
-            <button id="create-reminder-confirm-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Set Alarm</button>
-        </div>
-    </div>
-    
-    <!-- 4. Quick Import / Convert Modal -->
-    <div id="quick-import-modal" class="fixed bottom-0 left-0 right-0 w-full max-w-lg mx-auto bg-white p-6 rounded-t-2xl shadow-lg z-40 transform translate-y-full transition-transform duration-300">
-        <h3 class="text-lg font-semibold text-gray-900 mb-4">Import & Convert File</h3>
-        
-        <!-- Target Folder -->
-        <label for="import-folder-select" class="block text-sm font-medium text-gray-700 mb-1">1. Choose Target Folder</label>
-        <select id="import-folder-select" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4 bg-white">
-            <!-- Folder options populated by JS -->
-        </select>
-
-        <!-- File Input -->
-        <label class="block text-sm font-medium text-gray-700 mb-1">2. Select File</label>
-        <div class="file-input-wrapper w-full mb-4">
-            <button id="file-select-btn" class="w-full px-4 py-3 bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:bg-gray-100 hover:border-gray-400">
-                <i class="ph ph-file-arrow-up align-middle mr-2"></i>
-                <span id="file-select-text">Select a file...</span>
-            </button>
-            <input type="file" id="file-input-element" accept="image/*">
-        </div>
-
-        <!-- AI Analyzer Button -->
-        <button id="analyze-content-btn" disabled class="w-full px-4 py-2 bg-gray-200 text-gray-500 rounded-lg font-medium mb-4 shadow-sm cursor-not-allowed flex items-center justify-center">
-            <i class="ph ph-sparkle align-middle mr-1"></i>
-            <span id="analyze-content-btn-text">✨ Analyze Content</span>
-        </button>
-
-        <!-- AI Analysis Result -->
-        <div id="ai-analysis-container" class="hidden bg-indigo-50 border border-indigo-200 p-3 rounded-lg mb-4">
-            <p class="text-xs font-semibold text-indigo-800">AI Summary:</p>
-            <p id="ai-analysis-summary" class="text-sm text-indigo-700"></p>
-        </div>
-        
-        <!-- New File Name -->
-        <label for="import-file-name" class="block text-sm font-medium text-gray-700 mb-1">3. Name Your New File</label>
-        <input type="text" id="import-file-name" placeholder="e.g., 'Lab_Report_Final'" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4">
-        
-        <!-- Converted Type -->
-        <label for="import-convert-type" class="block text-sm font-medium text-gray-700 mb-1">4. Converted Type</label>
-        <select id="import-convert-type" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4 bg-white">
-            <option value="image">Image (Original)</option>
-            <option value="pdf">PDF</option>
-            <option value="docx">DOCX</option>
-            <option value="txt">Text</option>
-        </select>
-
-        <!-- Save/Cancel Buttons -->
-        <div class="flex justify-end space-x-2">
-            <button onclick="hideModal('quick-import-modal')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Cancel</button>
-            <button id="save-file-confirm-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-                <span id="save-file-btn-text">Save & Store</span>
-                <i id="save-file-spinner" class="ph ph-spinner animate-spin hidden"></i>
-            </button>
-        </div>
-    </div>
-    
-    <!-- 5. Toast Notification -->
-    <div id="toast-notification" class="fixed top-5 left-1/2 -translate-x-1/2 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 opacity-0 transition-opacity duration-300">
-        <span id="toast-message">Success!</span>
-    </div>
-
-    <!-- 6. Alarm Notification -->
-    <div id="alarm-notification" class="fixed top-0 left-0 right-0 bg-red-600 text-white p-4 z-50 shadow-lg flex justify-between items-center">
-        <div class="flex items-center">
-            <i class="ph ph-alarm text-3xl mr-3 animate-ping-slow"></i>
-            <div>
-                <h3 class="font-bold">ALARM: Reminder Due!</h3>
-                <p id="alarm-title" class="text-sm">Time to submit your assignment!</p>
+    <!-- 
+      Create New Folder Modal
+    -->
+    <div id="create-folder-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h3 class="text-xl font-semibold text-slate-800 mb-4">Create New Folder</h3>
+            <input type="text" id="folder-name-input" class="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g., 'Biology Notes'">
+            <div class="flex justify-end space-x-3 mt-6">
+                <button onclick="hideModal('create-folder-modal')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-4 rounded-lg transition duration-200">
+                    Cancel
+                </button>
+                <button id="create-folder-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm transition duration-200">
+                    Create
+                </button>
             </div>
         </div>
-        <button id="dismiss-alarm-btn" class="px-3 py-1 bg-red-500 rounded-lg hover:bg-red-400 text-sm">Dismiss</button>
     </div>
 
-    <!-- ======================= -->
-    <!-- Firebase & App Logic -->
-    <!-- ======================= -->
+    <!-- 
+      Import & Convert File Modal
+      This is the modal used when clicking "Quick Import" or "Import File".
+    -->
+    <div id="import-file-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg">
+            <h3 class="text-xl font-semibold text-slate-800 mb-6">Import & Convert File</h3>
+            
+            <!-- Folder Selection (Contextual) -->
+            <div id="import-folder-select-container" class="mb-4">
+                <label for="import-folder-select" class="block text-sm font-medium text-slate-700 mb-1">Choose Target Folder</label>
+                <select id="import-folder-select" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <!-- Folder options will be populated by JS -->
+                </select>
+            </div>
+
+            <!-- File Selection -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-slate-700 mb-1">Select File</label>
+                <input type="file" id="file-import-input" class="file-input-hidden">
+                <label for="file-import-input" class="file-input-label w-full text-center">
+                    Click to select a file...
+                </label>
+                <p id="file-import-filename" class="text-sm text-slate-500 italic mt-2"></p>
+            </div>
+            
+            <!-- AI Content Analyzer (for images) -->
+            <div id="ai-analysis-section" class="hidden mb-4 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+                <button id="analyze-file-content-btn" class="flex items-center justify-center w-full text-indigo-600 font-medium hover:text-indigo-800 transition duration-200">
+                    <span id="analyze-btn-text">✨ Analyze Content (AI)</span>
+                    <div id="analyze-btn-spinner" class="spinner !w-5 !h-5 !border-indigo-500 hidden ml-2"></div>
+                </button>
+                <div id="ai-analysis-result" class="text-sm text-slate-600 mt-2 hidden"></div>
+            </div>
+
+            <!-- File Name -->
+            <div class="mb-4">
+                <label for="file-import-name" class="block text-sm font-medium text-slate-700 mb-1">Name Your New File</label>
+                <input type="text" id="file-import-name" class="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g., 'Lab Report.pdf'">
+            </div>
+
+            <!-- Conversion Type -->
+            <div class="mb-6">
+                <label for="file-import-type" class="block text-sm font-medium text-slate-700 mb-1">Convert To (Simulated)</label>
+                <select id="file-import-type" class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="pdf">PDF</option>
+                    <option value="docx">DOCX (Word Document)</option>
+                    <option value="img">Image (PNG/JPG)</option>
+                    <option value="txt">Text File</option>
+                </select>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex justify-end space-x-3">
+                <button onclick="hideModal('import-file-modal')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-4 rounded-lg transition duration-200">
+                    Cancel
+                </button>
+                <button id="save-file-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm transition duration-200 flex items-center">
+                    <span id="save-file-btn-text">Save & Store</span>
+                    <div id="save-file-spinner" class="spinner !w-5 !h-5 !border-white hidden ml-2"></div>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 
+      Add Reminder / Alarm Modal
+    -->
+    <div id="add-reminder-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h3 class="text-xl font-semibold text-slate-800 mb-4">Set Reminder / Alarm</h3>
+            
+            <!-- Reminder Title & AI Task Breakdown -->
+            <div class="mb-4">
+                <label for="reminder-title" class="block text-sm font-medium text-slate-700 mb-1">Task Title</label>
+                <div class="flex space-x-2">
+                    <input type="text" id="reminder-title" class="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g., 'Study for Biology Final'">
+                    <button id="breakdown-task-btn" title="Break Down Task (AI)" class="p-3 bg-indigo-100 text-indigo-600 hover:bg-indigo-200 rounded-lg transition">
+                        ✨
+                    </button>
+                </div>
+            </div>
+
+            <!-- AI Task Breakdown Results -->
+            <div id="task-breakdown-loading" class="hidden text-center p-2">
+                <div class="spinner mx-auto !w-5 !h-5"></div>
+            </div>
+            <div id="task-breakdown-result" class="hidden mb-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                <h4 class="font-medium text-sm text-slate-700 mb-1">Suggested Sub-tasks:</h4>
+                <ul id="task-breakdown-list" class="list-disc list-inside text-sm text-slate-600 space-y-1">
+                    <!-- Sub-tasks from Gemini will be injected here -->
+                </ul>
+            </div>
+
+
+            <!-- Due Date / Time -->
+            <div class="mb-4">
+                <label for="reminder-datetime" class="block text-sm font-medium text-slate-700 mb-1">Due Date / Time</A_LABEL>
+                <input type="datetime-local" id="reminder-datetime" class="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex justify-end space-x-3 mt-6">
+                <button onclick="hideModal('add-reminder-modal')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-4 rounded-lg transition duration-200">
+                    Cancel
+                </button>
+                <button id="set-alarm-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm transition duration-200">
+                    Set Alarm
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 
+      Alarm Notification Modal
+      This appears when a reminder is due.
+    -->
+    <div id="alarm-notification-modal" class="fixed top-5 right-5 bg-red-600 text-white p-4 rounded-lg shadow-xl z-50 hidden animate-pulse">
+        <div class="flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-3"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="m12 8 0 4"></path><path d="m12 16 0 .01"></path></svg>
+            <div>
+                <h4 class="font-bold">ALARM!</h4>
+                <p id="alarm-notification-title" class="text-sm">Reminder is due!</p>
+            </div>
+            <button id="dismiss-alarm-btn" class="ml-4 text-red-100 hover:text-white">&times;</button>
+        </div>
+    </div>
+
+
+    <!-- 
+      File Details Modal
+      This appears when a file item is clicked.
+    -->
+    <div id="file-details-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h3 id="file-details-name" class="text-xl font-semibold text-slate-800 mb-4">File Details</h3>
+            
+            <div class="space-y-3">
+                <p><strong class="text-slate-600">Type:</strong> <span id="file-details-type" class="text-slate-800"></span></p>
+                <p><strong class="text-slate-600">Added:</strong> <span id="file-details-date" class="text-slate-800"></span></p>
+                
+                <div id="file-details-summary-container" class="hidden">
+                    <strong class="text-slate-600">AI Summary:</strong>
+                    <p id="file-details-summary" class="text-sm text-slate-700 bg-slate-50 p-3 rounded-md border border-slate-200 mt-1"></p>
+                </div>
+            </div>
+
+            <div class="flex justify-end space-x-3 mt-6">
+                <button onclick="hideModal('file-details-modal')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-4 rounded-lg transition duration-200">
+                    Close
+                </button>
+                <button id="file-details-open-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm transition duration-200">
+                    Open File
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- 
+      ================================================================
+      JAVASCRIPT (Firebase & App Logic)
+      ================================================================
+    -->
     <script type="module">
-        // -----------------------------------------------------------------
-        // 1. FIREBASE SDK IMPORTS
-        // -----------------------------------------------------------------
-        // We import all necessary functions ONCE at the top to avoid errors.
+        // Import Firebase services from the CDN
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { 
             getAuth, 
@@ -410,16 +534,18 @@
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { 
             getFirestore, 
-            setLogLevel, 
             doc, 
+            getDoc, 
             setDoc, 
             addDoc, 
+            updateDoc, 
             deleteDoc, 
             collection, 
-            onSnapshot, 
             query, 
             where, 
-            getDocs 
+            onSnapshot,
+            getDocs, // <-- This was the missing import
+            Timestamp
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import {
             getStorage,
@@ -428,1194 +554,1319 @@
             getDownloadURL
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
-        // -----------------------------------------------------------------
-        // 2. FIREBASE CONFIGURATION & INITIALIZATION
-        // -----------------------------------------------------------------
-        // This is your specific Firebase project configuration.
+        // --- FIREBASE INITIALIZATION AND CONFIGURATION ---
+        
+        // 🛑 This is your specific Firebase configuration.
+        // This connects the app to your 'personalfolder-d9ba8' project.
         const firebaseConfig = {
           apiKey: "AIzaSyAa4EpAF0CakYdQsbGxurUNXMwRH9W4IcQ",
           authDomain: "personalfolder-d9ba8.firebaseapp.com",
           projectId: "personalfolder-d9ba8",
-          storageBucket: "personalfolder-d9ba8.firebasestorage.app",
+          storageBucket: "personalfolder-d9ba8.appspot.com",
           messagingSenderId: "216731617905",
           appId: "1:216731617905:web:fea13d842d3102f7c229d0",
           measurementId: "G-GLWFYE1GW0"
         };
         
-        // This App ID is used to construct database paths
+        // Set the appId for database paths
         const appId = firebaseConfig.projectId || 'default-app-id';
-        
-        // This is always null when using hardcoded config, we will sign in anonymously
-        const initialAuthToken = null; 
-        
-        // Global variables for Firebase services
+        // We will sign in anonymously, so no initial token is needed.
+        const initialAuthToken = null;
+        // This flag will be true, enabling the database functions.
+        const isFirebaseAvailable = Object.keys(firebaseConfig).length > 0;
+
+        // Initialize Firebase
         let app, auth, db, storage;
-        let currentUserId = null;
-        let isFirebaseAvailable = false; // Flag to track Firebase status
-        
-        // Global state for navigation
-        let currentView = 'files-section';
-        let currentFolderId = null;
-        let currentFolderName = null;
-        
-        // Global state for reminders
-        const alarmedReminders = new Set();
-        let alarmCheckInterval = null;
+        let userId = null;
+        let isAuthReady = false; // Flag to track if auth state is confirmed
+
+        // Global state variables
+        let currentView = 'files'; // 'files', 'reminders', 'study-ai'
+        let currentFileView = 'folders'; // 'folders', 'files' (sub-view)
+        let currentFolderId = null; // The ID of the folder being viewed
+        let currentFolderName = null; // The name of the folder being viewed
+        let currentStudyImage = null; // { base64, mimeType, fullDataUrl } for Study AI
+        let lastStudyAiResult = ""; // To store text for TTS
+        let reminderListeners = []; // To store unsubscribe functions for snapshots
+        let folderListeners = [];
+        let fileListeners = [];
+        let alarmedReminders = new Set(); // To track reminders that have already alarmed
+        let localFolderCache = new Map(); // Cache for folder data
+
+        // DOM Element References
+        const initializingView = document.getElementById('initializing-view');
+        const offlineWarning = document.getElementById('offline-warning');
+        const offlineMessage = document.getElementById('offline-message');
+        const userIdDisplay = document.getElementById('user-id-display');
+        const tabs = document.querySelectorAll('.nav-tab');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        // Folder View Elements
+        const filesSection = document.getElementById('files-section');
+        const folderListView = document.getElementById('folder-list-view');
+        const folderListContainer = document.getElementById('folder-list-container');
+        const noFoldersMessage = document.getElementById('no-folders-message');
+        const showFolderModalBtn = document.getElementById('show-folder-modal-btn');
+        const showQuickImportModalBtn = document.getElementById('show-quick-import-modal-btn');
+
+        // File View Elements
+        const fileListView = document.getElementById('file-list-view');
+        const fileListContainer = document.getElementById('file-list-container');
+        const noFilesMessage = document.getElementById('no-files-message');
+        const backToFoldersBtn = document.getElementById('back-to-folders-btn');
+        const currentFolderNameEl = document.getElementById('current-folder-name');
+        const showImportModalFromFileViewBtn = document.getElementById('show-import-modal-from-file-view-btn');
+
+        // Reminders View Elements
+        const remindersSection = document.getElementById('reminders-section');
+        const remindersListContainer = document.getElementById('reminders-list-container');
+        const noRemindersMessage = document.getElementById('no-reminders-message');
+        const showReminderModalBtn = document.getElementById('show-reminder-modal-btn');
+
+        // Study AI View Elements
+        const studyAiSection = document.getElementById('study-ai-section');
+        const studyAiInput = document.getElementById('study-ai-input');
+        const studyAiAskBtn = document.getElementById('study-ai-ask-btn');
+        const studyAiLoading = document.getElementById('study-ai-loading');
+        const studyAiOutput = document.getElementById('study-ai-output');
+        const studyAiResultHeader = document.getElementById('study-ai-result-header');
+        const studyAiSources = document.getElementById('study-ai-sources');
+        const studyAiSourcesList = document.getElementById('study-ai-sources-list');
+        const studyAiImageInput = document.getElementById('study-ai-image-input');
+        const studyAiImageFilename = document.getElementById('study-ai-image-filename');
+        const studyAiImagePreview = document.getElementById('study-ai-image-preview');
+
+        // AI TTS Elements
+        const studyAiSpeakBtn = document.getElementById('study-ai-speak-btn');
+        const studyAiSpeakBtnText = document.getElementById('study-ai-speak-btn-text');
+        const studyAiSpeakBtnSpinner = document.getElementById('study-ai-speak-btn-spinner');
+
+        // Create Folder Modal Elements
+        const createFolderModal = document.getElementById('create-folder-modal');
+        const folderNameInput = document.getElementById('folder-name-input');
+        const createFolderBtn = document.getElementById('create-folder-btn');
+
+        // Import File Modal Elements
+        const importFileModal = document.getElementById('import-file-modal');
+        const importFolderSelectContainer = document.getElementById('import-folder-select-container');
+        const importFolderSelect = document.getElementById('import-folder-select');
+        const fileImportInput = document.getElementById('file-import-input');
+        const fileImportFilename = document.getElementById('file-import-filename');
+        const fileImportName = document.getElementById('file-import-name');
+        const fileImportType = document.getElementById('file-import-type');
+        const saveFileBtn = document.getElementById('save-file-btn');
+        const saveFileBtnText = document.getElementById('save-file-btn-text');
+        const saveFileSpinner = document.getElementById('save-file-spinner');
+        const aiAnalysisSection = document.getElementById('ai-analysis-section');
+        const analyzeFileContentBtn = document.getElementById('analyze-file-content-btn');
+        const analyzeBtnText = document.getElementById('analyze-btn-text');
+        const analyzeBtnSpinner = document.getElementById('analyze-btn-spinner');
+        const aiAnalysisResult = document.getElementById('ai-analysis-result');
+        let fileToUpload = null; // Store the file object for upload
+
+        // Add Reminder Modal Elements
+        const addReminderModal = document.getElementById('add-reminder-modal');
+        const reminderTitle = document.getElementById('reminder-title');
+        const reminderDatetime = document.getElementById('reminder-datetime');
+        const setAlarmBtn = document.getElementById('set-alarm-btn');
+        const breakdownTaskBtn = document.getElementById('breakdown-task-btn');
+        const taskBreakdownLoading = document.getElementById('task-breakdown-loading');
+        const taskBreakdownResult = document.getElementById('task-breakdown-result');
+        const taskBreakdownList = document.getElementById('task-breakdown-list');
         let currentSubTasks = []; // Store AI-generated sub-tasks
+
+        // Alarm Notification Elements
+        const alarmNotificationModal = document.getElementById('alarm-notification-modal');
+        const alarmNotificationTitle = document.getElementById('alarm-notification-title');
+        const dismissAlarmBtn = document.getElementById('dismiss-alarm-btn');
         
-        // Global state for AI
-        let lastAiResultText = "";
-        let currentSelectedFile = null;
-
-        // -----------------------------------------------------------------
-        // 3. CORE APP INITIALIZATION
-        // -----------------------------------------------------------------
-
-        /**
-         * Main function to initialize the app.
-         * Waits for the DOM to be ready, then initializes Firebase and UI.
-         */
-        document.addEventListener('DOMContentLoaded', () => {
-            initializeAppAndAuth();
-        });
-
-        /**
-         * Initializes Firebase services and authentication.
-         */
-        async function initializeAppAndAuth() {
-            try {
-                // Initialize Firebase
-                app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
-                storage = getStorage(app);
-                setLogLevel('debug'); // Enable detailed Firestore logging
-                isFirebaseAvailable = true;
-                
-                // Listen for authentication state changes
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        // User is signed in
-                        currentUserId = user.uid;
-                        document.getElementById('user-id-display').textContent = `User ID: ${user.uid.substring(0, 6)}...`;
-                        
-                        // User is authenticated, now load their data
-                        loadInitialData();
-                        
-                    } else {
-                        // User is not signed in, try to sign in
-                        console.log("No user found, attempting anonymous sign-in...");
-                        setLoadingState("Authenticating...");
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(auth, initialAuthToken);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                    }
-                });
-
-            } catch (error) {
-                console.error("Firebase Initialization Failed:", error);
-                isFirebaseAvailable = false;
-                // Show a critical error message
-                showOfflineWarning(`Firebase Init Failed: ${error.message}`);
-                // Still try to show the UI
-                showAppContent(); 
-            }
-        }
+        // File Details Modal Elements
+        const fileDetailsModal = document.getElementById('file-details-modal');
+        const fileDetailsName = document.getElementById('file-details-name');
+        const fileDetailsType = document.getElementById('file-details-type');
+        const fileDetailsDate = document.getElementById('file-details-date');
+        const fileDetailsSummaryContainer = document.getElementById('file-details-summary-container');
+        const fileDetailsSummary = document.getElementById('file-details-summary');
+        const fileDetailsOpenBtn = document.getElementById('file-details-open-btn');
+        let fileDetailsUrl = null; // Store URL for the "Open" button
         
-        /**
-         * Loads all initial data (folders, reminders) from Firestore.
-         */
-        function loadInitialData() {
-            if (!isFirebaseAvailable || !currentUserId) {
-                console.warn("Skipping data load: Firebase not ready or user not auth'd.");
-                showAppContent(); // Show UI even if offline
-                return;
-            }
-            
-            console.log("Loading initial data for user:", currentUserId);
-            setLoadingState("Loading data...");
 
-            // Start loading data
-            setupFolderListener();
-            setupReminderListener();
-            
-            // Start checking for alarms
-            if (alarmCheckInterval) clearInterval(alarmCheckInterval);
-            checkReminders(); // Check immediately on load
-            alarmCheckInterval = setInterval(checkReminders, 60000); // Check every 60 seconds
-
-            // Show the app content
-            showAppContent();
-        }
-        
-        /**
-         * Updates the text on the main loading indicator.
-         * @param {string} text - The message to display.
-         */
-        function setLoadingState(text) {
-            document.getElementById('loading-text').textContent = text;
-        }
-
-        // -----------------------------------------------------------------
-        // 4. UI / VIEW MANAGEMENT
-        // -----------------------------------------------------------------
-        
-        /**
-         * Shows the main app content and hides the loading spinner.
-         */
-        function showAppContent() {
-            document.getElementById('loading-indicator').classList.add('hidden');
-            document.getElementById('app-content').classList.remove('hidden');
-            // Ensure the default view is visible
-            navigateToSection('files-section');
-        }
-
-        /**
-         * Handles navigation between the main app sections (Files, Reminders, Study AI).
-         */
-        function navigateToSection(sectionId) {
-            currentView = sectionId;
-            // Hide all sections
-            document.querySelectorAll('#app-content section').forEach(section => {
-                section.classList.add('hidden');
-            });
-            // Deactivate all nav buttons
-            document.querySelectorAll('.nav-btn').forEach(btn => {
-                btn.classList.remove('text-indigo-600');
-                btn.classList.add('text-gray-500');
-            });
-            // Show the target section
-            document.getElementById(sectionId).classList.remove('hidden');
-            // Activate the target nav button
-            const activeButton = document.querySelector(`.nav-btn[data-section="${sectionId}"]`);
-            if (activeButton) {
-                activeButton.classList.add('text-indigo-600');
-                activeButton.classList.remove('text-gray-500');
-            }
-        }
-        
-        /**
-         * Switches the file view from the folder list to a specific folder's file list.
-         */
-        function showFileListView(folderId, folderName) {
-            currentFolderId = folderId;
-            currentFolderName = folderName;
-            
-            document.getElementById('folder-list-view').classList.add('hidden');
-            document.getElementById('file-list-view').classList.remove('hidden');
-            document.getElementById('current-folder-name').textContent = folderName;
-            
-            // Set up the listener for files inside this folder
-            setupFileListener(folderId);
-        }
-        
-        /**
-         * Switches the file view back to the main folder list.
-         */
-        function showFolderListView() {
-            currentFolderId = null;
-            currentFolderName = null;
-            
-            document.getElementById('file-list-view').classList.add('hidden');
-            document.getElementById('folder-list-view').classList.remove('hidden');
-            
-            // Stop listening to file changes
-            setupFileListener(null);
-        }
+        // --- CORE FUNCTIONS ---
 
         /**
          * Shows a modal dialog.
          * @param {string} modalId - The ID of the modal element to show.
          */
-        function showModal(modalId) {
-            // Special logic for quick-import modal: populate folders
-            if (modalId === 'quick-import-modal') {
-                populateFolderSelect();
-            }
-            // Special logic for folder-specific import
-            if (modalId === 'quick-import-modal' && currentFolderId) {
-                const select = document.getElementById('import-folder-select');
-                select.value = currentFolderId;
-                select.disabled = true; // Disable select if we are already in a folder
-            } else if (modalId === 'quick-import-modal') {
-                document.getElementById('import-folder-select').disabled = false;
-            }
-
-            document.getElementById('modal-backdrop').classList.remove('hidden');
+        const showModal = (modalId) => {
             const modal = document.getElementById(modalId);
-            modal.classList.remove('translate-y-full');
-        }
-        window.showModal = showModal; // Expose to global scope for HTML onclick
+            if (modal) {
+                modal.classList.remove('hidden');
+            }
+        };
+        // Expose to window for inline onclick attributes
+        window.showModal = showModal;
+
 
         /**
          * Hides a modal dialog.
          * @param {string} modalId - The ID of the modal element to hide.
          */
-        function hideModal(modalId) {
+        const hideModal = (modalId) => {
             const modal = document.getElementById(modalId);
-            modal.classList.add('translate-y-full');
-            document.getElementById('modal-backdrop').classList.add('hidden');
-            
-            // Reset import modal form
-            if (modalId === 'quick-import-modal') {
-                resetImportModal();
+            if (modal) {
+                modal.classList.add('hidden');
             }
-            // Reset reminder modal form
-            if (modalId === 'add-reminder-modal') {
-                resetReminderModal();
-            }
-        }
-        window.hideModal = hideModal; // Expose to global scope for HTML onclick
+        };
+        // Expose to window for inline onclick attributes
+        window.hideModal = hideModal;
+
 
         /**
-         * Hides all currently visible modals.
+         * Displays a simple alert message (replaces native alert).
+         * @param {string} message - The message to display.
          */
-        function hideAllModals() {
-            document.querySelectorAll('.fixed.z-40').forEach(modal => {
-                if (!modal.classList.contains('translate-y-full')) {
-                    hideModal(modal.id);
+        const showAppAlert = (message) => {
+            // In a real app, this would be a styled modal.
+            // For now, we'll use the offline warning bar.
+            console.warn(message);
+            offlineMessage.textContent = message;
+            offlineWarning.classList.remove('hidden');
+            offlineWarning.classList.replace('bg-red-100', 'bg-yellow-100');
+            offlineWarning.classList.replace('border-red-500', 'border-yellow-500');
+            offlineWarning.classList.replace('text-red-700', 'text-yellow-700');
+            
+            setTimeout(() => {
+                offlineWarning.classList.add('hidden');
+                // Reset styles
+                offlineWarning.classList.replace('bg-yellow-100', 'bg-red-100');
+                offlineWarning.classList.replace('border-yellow-500', 'border-red-500');
+                offlineWarning.classList.replace('text-yellow-700', 'text-red-700');
+            }, 3000);
+        };
+
+
+        /**
+         * Switches the main content view between tabs.
+         * @param {string} tabName - The name of the tab to switch to ('files', 'reminders', 'study-ai').
+         */
+        const switchTab = (tabName) => {
+            currentView = tabName;
+            
+            // Update tab button styles
+            tabs.forEach(tab => {
+                if (tab.dataset.tab === tabName) {
+                    tab.classList.add('text-indigo-600', 'border-indigo-600');
+                    tab.classList.remove('text-slate-500');
+                } else {
+                    tab.classList.add('text-slate-500');
+                    tab.classList.remove('text-indigo-600', 'border-indigo-600');
                 }
             });
-        }
-        
-        /**
-         * Resets the import modal to its default state.
-         */
-        function resetImportModal() {
-            document.getElementById('file-input-element').value = null;
-            document.getElementById('file-select-text').textContent = 'Select a file...';
-            document.getElementById('import-file-name').value = '';
-            document.getElementById('import-convert-type').value = 'image';
-            document.getElementById('ai-analysis-container').classList.add('hidden');
-            document.getElementById('ai-analysis-summary').textContent = '';
-            const analyzeBtn = document.getElementById('analyze-content-btn');
-            analyzeBtn.disabled = true;
-            analyzeBtn.classList.add('bg-gray-200', 'text-gray-500', 'cursor-not-allowed');
-            analyzeBtn.classList.remove('bg-purple-100', 'text-purple-700', 'hover:bg-purple-200');
-            document.getElementById('analyze-content-btn-text').textContent = '✨ Analyze Content';
-            currentSelectedFile = null;
-        }
 
-        /**
-         * Resets the reminder modal to its default state.
-         */
-        function resetReminderModal() {
-            document.getElementById('new-reminder-title').value = '';
-            document.getElementById('new-reminder-time').value = '';
-            document.getElementById('subtask-container').classList.add('hidden');
-            document.getElementById('subtask-preview-list').innerHTML = '';
-            currentSubTasks = [];
-        }
-
-        /**
-         * Shows a temporary toast notification.
-         * @param {string} message - The message to display.
-         * @param {boolean} [isError=false] - Whether the toast is an error message.
-         */
-        function showToast(message, isError = false) {
-            const toast = document.getElementById('toast-notification');
-            const toastMessage = document.getElementById('toast-message');
+            // Show/hide tab content
+            tabContents.forEach(content => {
+                if (content.id === `${tabName}-section`) {
+                    content.classList.remove('hidden');
+                } else {
+                    content.classList.add('hidden');
+                }
+            });
             
-            toastMessage.textContent = message;
-            if (isError) {
-                toast.classList.remove('bg-green-500');
-                toast.classList.add('bg-red-500');
+            // Hide initializing view
+            initializingView.classList.add('hidden');
+        };
+
+        /**
+         * Switches the file view between folders list and file list.
+         * @param {string} viewName - 'folders' or 'files'.
+         */
+        const switchFileView = (viewName) => {
+            currentFileView = viewName;
+            if (viewName === 'files') {
+                folderListView.classList.add('hidden');
+                fileListView.classList.remove('hidden');
+                // Fetch and render files for the currentFolderId
+                fetchFiles(currentFolderId);
             } else {
-                toast.classList.add('bg-green-500');
-                toast.classList.remove('bg-red-500');
+                currentFolderId = null;
+                currentFolderName = null;
+                folderListView.classList.remove('hidden');
+                fileListView.classList.add('hidden');
+                // Detach old file listeners
+                detachListeners(fileListeners);
             }
-            
-            toast.classList.remove('opacity-0');
-            setTimeout(() => {
-                toast.classList.add('opacity-0');
-            }, 3000); // Hide after 3 seconds
-        }
-        
-        /**
-         * Shows the offline/error warning banner.
-         * @param {string} message - The error message to display.
-         */
-        function showOfflineWarning(message) {
-            document.getElementById('offline-message').textContent = message;
-            document.getElementById('offline-warning').classList.remove('hidden');
-            document.getElementById('loading-indicator').classList.add('hidden');
-        }
-        
-        // -----------------------------------------------------------------
-        // 5. EVENT LISTENERS
-        // -----------------------------------------------------------------
-        
-        // Navigation buttons
-        document.querySelectorAll('.nav-btn').forEach(btn => {
-            btn.addEventListener('click', () => navigateToSection(btn.dataset.section));
-        });
-
-        // --- Modals ---
-        document.getElementById('new-folder-btn').addEventListener('click', () => showModal('new-folder-modal'));
-        document.getElementById('add-reminder-btn').addEventListener('click', () => showModal('add-reminder-modal'));
-        document.getElementById('quick-import-btn').addEventListener('click', () => showModal('quick-import-modal'));
-        document.getElementById('import-file-to-folder-btn').addEventListener('click', () => showModal('quick-import-modal'));
-
-        // --- View Switching ---
-        document.getElementById('back-to-folders-btn').addEventListener('click', showFolderListView);
-        
-        // --- Form Submissions ---
-        document.getElementById('create-folder-confirm-btn').addEventListener('click', handleCreateFolder);
-        document.getElementById('create-reminder-confirm-btn').addEventListener('click', handleCreateReminder);
-        document.getElementById('save-file-confirm-btn').addEventListener('click', handleSaveFile);
-
-        // --- Study AI ---
-        document.getElementById('study-ai-submit-btn').addEventListener('click', handleStudyQuery);
-        document.getElementById('study-ai-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') handleStudyQuery();
-        });
-        document.getElementById('study-ai-speak-btn').addEventListener('click', () => {
-            if (lastAiResultText) speakResult(lastAiResultText);
-        });
-        
-        // --- File Input & AI Analyzer ---
-        document.getElementById('file-input-element').addEventListener('change', handleFileSelection);
-        document.getElementById('analyze-content-btn').addEventListener('click', analyzeFileContent);
-        
-        // --- Reminder AI ---
-        document.getElementById('breakdown-task-btn').addEventListener('click', handleTaskBreakdown);
-
-        // --- Alarm ---
-        document.getElementById('dismiss-alarm-btn').addEventListener('click', () => {
-            document.getElementById('alarm-notification').classList.remove('show');
-        });
-
-        // -----------------------------------------------------------------
-        // 6. FIRESTORE: FOLDER MANAGEMENT
-        // -----------------------------------------------------------------
-        
-        let folderUnsubscribe = null; // To store the unsubscribe function
+        };
 
         /**
-         * Sets up a real-time listener for the user's folders.
+         * Detaches all active Firestore listeners.
+         * @param {Array<Function>} listenerArray - The array of unsubscribe functions.
          */
-        function setupFolderListener() {
-            if (folderUnsubscribe) folderUnsubscribe(); // Unsubscribe from previous listener
-            if (!isFirebaseAvailable || !currentUserId) return;
+        const detachListeners = (listenerArray) => {
+            listenerArray.forEach(unsubscribe => unsubscribe());
+            listenerArray.length = 0; // Clear the array
+        };
+
+
+        // --- FIREBASE & DATA FUNCTIONS ---
+
+        /**
+         * Initializes Firebase and sets up authentication.
+         */
+        const initializeAppAndAuth = () => {
+            if (!isFirebaseAvailable) {
+                console.error("Firebase config is missing. Running in OFFLINE MODE.");
+                offlineWarning.classList.remove('hidden');
+                // Force UI to render in offline state
+                userIdDisplay.textContent = "User ID: OFFLINE";
+                isAuthReady = true;
+                switchTab('files'); // Show default tab
+                switchFileView('folders'); // Show default sub-view
+                renderFolders([]); // Show empty folders list
+                return;
+            }
+
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                storage = getStorage(app);
+
+                // Listen for authentication state changes
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        // User is signed in anonymously
+                        userId = user.uid;
+                        userIdDisplay.textContent = `User ID: ${userId.substring(0, 8)}...`;
+                        console.log("User signed in anonymously:", userId);
+
+                        if (!isAuthReady) {
+                            isAuthReady = true;
+                            // This is the first successful auth
+                            initializeAppUI();
+                        }
+                    } else {
+                        // User is signed out
+                        userId = null;
+                        isAuthReady = false;
+                        userIdDisplay.textContent = "User ID: N/A";
+                        console.log("User is signed out. Attempting to sign in...");
+                        // Try to sign in again
+                        signInAnonymously(auth).catch(handleFirebaseError);
+                    }
+                });
+
+                // Initial sign-in attempt
+                if (initialAuthToken) {
+                    // This path is for the canvas environment
+                    console.log("Signing in with custom token...");
+                    signInWithCustomToken(auth, initialAuthToken).catch(handleFirebaseError);
+                } else {
+                    // This path is for GitHub Pages
+                    console.log("Signing in anonymously...");
+                    signInAnonymously(auth).catch(handleFirebaseError);
+                }
+
+            } catch (error) {
+                console.error("Firebase Initialization Error:", error);
+                handleFirebaseError(error);
+            }
+        };
+
+        /**
+         * Handles Firebase errors and displays them.
+         * @param {Error} error - The error object from Firebase.
+         */
+        const handleFirebaseError = (error) => {
+            console.error("Firebase Error:", error.code, error.message);
             
-            const foldersCollection = collection(db, `artifacts/${appId}/users/${currentUserId}/folders`);
+            let userMessage = `Error: ${error.message}`;
+            if (error.code === 'auth/operation-not-allowed') {
+                userMessage = "Error: Anonymous sign-in is not enabled. Please enable it in the Firebase console (Authentication > Sign-in method).";
+            } else if (error.code === 'permission-denied') {
+                userMessage = "Error: Insufficient permissions. Please check your Firestore or Storage security rules.";
+            }
+
+            offlineMessage.textContent = userMessage;
+            offlineWarning.classList.remove('hidden');
             
-            folderUnsubscribe = onSnapshot(foldersCollection, (snapshot) => {
+            // Force UI to render even if auth fails, to prevent "Initializing..." hang
+            if (!isAuthReady) {
+                isAuthReady = true; // Mark as "ready" to stop loops
+                userIdDisplay.textContent = "User ID: ERROR";
+                switchTab('files');
+                switchFileView('folders');
+                renderFolders([]);
+            }
+        };
+
+        /**
+         * Sets up the main application UI after auth is ready.
+         */
+        const initializeAppUI = () => {
+            if (!isAuthReady || !userId) return;
+
+            console.log("Initializing UI and fetching data...");
+            
+            // Setup tab switching
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+            });
+            
+            // Set default view
+            switchTab('files');
+        
+            // Fetch initial data
+            fetchFolders();
+            fetchReminders();
+            
+            // Start reminder check interval
+            setInterval(checkReminders, 60000); // Check every 60 seconds
+        };
+
+        // --- FOLDER MANAGEMENT ---
+
+        /**
+         * Fetches the user's folders from Firestore and sets up a realtime listener.
+         */
+        const fetchFolders = () => {
+            if (!isFirebaseAvailable || !userId) return;
+            
+            detachListeners(folderListeners); // Clear old listeners
+            
+            const foldersCol = collection(db, 'artifacts', appId, 'users', userId, 'folders');
+            const q = query(foldersCol);
+
+            const unsubscribe = onSnapshot(q, (querySnapshot) => {
                 const folders = [];
-                snapshot.forEach(doc => {
-                    folders.push({ id: doc.id, ...doc.data() });
+                localFolderCache.clear();
+                querySnapshot.forEach((doc) => {
+                    const folder = { id: doc.id, ...doc.data() };
+                    folders.push(folder);
+                    localFolderCache.set(folder.id, folder); // Update cache
                 });
                 renderFolders(folders);
-                console.log("Folders updated:", folders);
+                populateFolderSelect(folders); // Update dropdowns
             }, (error) => {
-                console.error("Error listening to folders:", error);
-                showToast(`Error loading folders: ${error.message}`, true);
+                handleFirebaseError(error);
+                renderFolders([]); // Show empty list on error
             });
-        }
+            
+            folderListeners.push(unsubscribe);
+        };
 
         /**
          * Renders the list of folders in the UI.
          * @param {Array} folders - An array of folder objects.
          */
-        function renderFolders(folders) {
-            const folderList = document.getElementById('folder-list');
-            folderList.innerHTML = ''; // Clear existing list
+        const renderFolders = (folders) => {
+            folderListContainer.innerHTML = ''; // Clear existing list
             
             if (folders.length === 0) {
-                document.getElementById('no-folders-message').classList.remove('hidden');
+                noFoldersMessage.classList.remove('hidden');
             } else {
-                document.getElementById('no-folders-message').classList.add('hidden');
-                folders.sort((a, b) => a.name.localeCompare(b.name)); // Sort alphabetically
+                noFoldersMessage.classList.add('hidden');
+                // Sort folders alphabetically by name
+                folders.sort((a, b) => a.name.localeCompare(b.name));
                 
                 folders.forEach(folder => {
                     const folderEl = document.createElement('div');
-                    folderEl.className = "folder-item bg-white p-4 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer flex flex-col justify-between";
-                    folderEl.dataset.folderId = folder.id;
-                    folderEl.dataset.folderName = folder.name;
+                    folderEl.className = 'folder-item bg-white p-4 rounded-lg shadow-sm flex justify-between items-center cursor-pointer hover:bg-slate-50 transition duration-150';
+                    folderEl.dataset.id = folder.id;
+                    folderEl.dataset.name = folder.name;
+                    
                     folderEl.innerHTML = `
-                        <div class="flex justify-between items-center">
-                            <i class="ph ph-folder text-4xl text-indigo-500"></i>
-                            <button class="delete-folder-btn text-gray-400 hover:text-red-500" data-folder-id="${folder.id}" data-folder-name="${folder.name}">
-                                <i class="ph ph-trash"></i>
-                            </button>
+                        <div class="flex items-center min-w-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500 flex-shrink-0"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                            <span class="ml-3 font-medium text-slate-700 truncate">${folder.name}</span>
                         </div>
-                        <span class="mt-2 text-sm font-medium text-gray-700 block truncate">${folder.name}</span>
+                        <button class="delete-folder-btn text-red-400 hover:text-red-600 p-1 rounded-full transition duration-150" data-id="${folder.id}" title="Delete folder">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                        </button>
                     `;
                     
-                    // Add click listener to the folder element (but not the button)
+                    // Click listener for the folder item (but not the button)
                     folderEl.addEventListener('click', (e) => {
                         if (!e.target.closest('.delete-folder-btn')) {
-                            showFileListView(folder.id, folder.name);
+                            handleFolderClick(folder.id, folder.name);
                         }
                     });
                     
-                    // Add click listener to the delete button
+                    // Click listener for the delete button
                     folderEl.querySelector('.delete-folder-btn').addEventListener('click', (e) => {
                         e.stopPropagation(); // Prevent folder click
                         handleDeleteFolder(folder.id, folder.name);
                     });
                     
-                    folderList.appendChild(folderEl);
+                    folderListContainer.appendChild(folderEl);
                 });
             }
-        }
-        
-        /**
-         * Populates the <select> element in the import modal with folder names.
-         */
-        async function populateFolderSelect() {
-            if (!isFirebaseAvailable || !currentUserId) return;
-            
-            const selectEl = document.getElementById('import-folder-select');
-            selectEl.innerHTML = '<option value="">Select a folder...</option>'; // Clear and add default
-            
-            try {
-                const foldersCollection = collection(db, `artifacts/${appId}/users/${currentUserId}/folders`);
-                const snapshot = await getDocs(foldersCollection);
-                
-                const folders = [];
-                snapshot.forEach(doc => folders.push({ id: doc.id, ...doc.data() }));
-                
-                folders.sort((a, b) => a.name.localeCompare(b.name));
-                
-                folders.forEach(folder => {
-                    const option = document.createElement('option');
-                    option.value = folder.id;
-                    option.textContent = folder.name;
-                    selectEl.appendChild(option);
-                });
-                
-            } catch (error) {
-                console.error("Error populating folder select:", error);
-                showToast("Could not load folders for select.", true);
-            }
-        }
+        };
 
         /**
-         * Handles the creation of a new folder in Firestore.
+         * Populates the folder <select> dropdown in the import modal.
+         * @param {Array} folders - An array of folder objects.
          */
-        async function handleCreateFolder() {
-            if (!isFirebaseAvailable) {
-                showToast("Cannot create folder: Offline Mode.", true);
-                return;
+        const populateFolderSelect = (folders) => {
+            importFolderSelect.innerHTML = '<option value="">Select a folder...</option>'; // Clear and add default
+            // Sort folders alphabetically
+            folders.sort((a, b) => a.name.localeCompare(b.name));
+            folders.forEach(folder => {
+                const option = document.createElement('option');
+                option.value = folder.id;
+                option.textContent = folder.name;
+                importFolderSelect.appendChild(option);
+            });
+        };
+
+        /**
+         * Handles the creation of a new folder.
+         */
+        const handleCreateFolder = async () => {
+            if (!isFirebaseAvailable || !userId) {
+                return showAppAlert("Cannot create folder. Database not connected.");
             }
             
-            const folderName = document.getElementById('new-folder-name').value.trim();
+            const folderName = folderNameInput.value.trim();
             if (!folderName) {
-                showToast("Folder name cannot be empty.", true);
-                return;
+                return showAppAlert("Please enter a folder name.");
             }
-            
+
             try {
-                const foldersCollection = collection(db, `artifacts/${appId}/users/${currentUserId}/folders`);
-                await addDoc(foldersCollection, {
+                const foldersCol = collection(db, 'artifacts', appId, 'users', userId, 'folders');
+                await addDoc(foldersCol, {
                     name: folderName,
-                    createdAt: new Date().toISOString()
+                    createdAt: Timestamp.now()
                 });
                 
-                showToast("Folder created successfully!");
-                hideModal('new-folder-modal');
-                document.getElementById('new-folder-name').value = ''; // Clear input
+                folderNameInput.value = '';
+                hideModal('create-folder-modal');
                 
             } catch (error) {
-                console.error("Error creating folder:", error);
-                showToast(`Error: ${error.message}`, true);
+                handleFirebaseError(error);
+                showAppAlert("Failed to create folder.");
             }
-        }
-        
+        };
+
         /**
-         * Handles the deletion of a folder from Firestore.
+         * Handles clicking on a folder to view its contents.
+         * @param {string} folderId - The ID of the clicked folder.
+         * @param {string} folderName - The name of the clicked folder.
          */
-        async function handleDeleteFolder(folderId, folderName) {
-            // NOTE: A real app should ask for confirmation here
-            // We are skipping confirm() as it's blocked in some environments
+        const handleFolderClick = (folderId, folderName) => {
+            currentFolderId = folderId;
+            currentFolderName = folderName;
+            currentFolderNameEl.textContent = folderName;
+            switchFileView('files');
+        };
+
+        /**
+         * Handles deleting a folder (and its contents, TBD).
+         * @param {string} folderId - The ID of the folder to delete.
+         * @param {string} folderName - The name of the folder (for confirmation).
+         */
+        const handleDeleteFolder = async (folderId, folderName) => {
+            // Note: window.confirm is bad UX, replace with a custom modal in a real app
+            // For now, we'll skip confirmation to avoid `confirm()`
+            // const isConfirmed = confirm(`Are you sure you want to delete "${folderName}"? This cannot be undone.`);
+            // if (!isConfirmed) return;
             
-            if (!isFirebaseAvailable) {
-                showToast("Cannot delete folder: Offline Mode.", true);
-                return;
+            // TODO: In a real app, we must also delete all files *inside* this folder,
+            // which requires deleting from both Firestore and Firebase Storage (a complex operation).
+            // For now, we'll just delete the folder document.
+
+            if (!isFirebaseAvailable || !userId) {
+                return showAppAlert("Cannot delete folder. Database not connected.");
             }
-            
+
             try {
-                const folderDoc = doc(db, `artifacts/${appId}/users/${currentUserId}/folders/${folderId}`);
+                const folderDoc = doc(db, 'artifacts', appId, 'users', userId, 'folders', folderId);
                 await deleteDoc(folderDoc);
-                
-                showToast("Folder deleted.");
-                // TODO: In a real app, we should also delete all files in Firebase Storage 
-                // and all file documents in the sub-collection. This is a complex operation.
-                
+                console.log(`Folder ${folderId} deleted.`);
             } catch (error) {
-                console.error("Error deleting folder:", error);
-                showToast(`Error: ${error.message}`, true);
+                handleFirebaseError(error);
+                showAppAlert("Failed to delete folder.");
             }
-        }
+        };
 
-        // -----------------------------------------------------------------
-        // 7. FIRESTORE & STORAGE: FILE MANAGEMENT
-        // -----------------------------------------------------------------
-        
-        let fileUnsubscribe = null; // To store the file listener unsubscribe function
+
+        // --- FILE MANAGEMENT ---
 
         /**
-         * Sets up a real-time listener for files within a specific folder.
-         * @param {string | null} folderId - The ID of the folder to listen to, or null to stop.
+         * Fetches files for a specific folder from Firestore.
+         * @param {string} folderId - The ID of the folder.
          */
-        function setupFileListener(folderId) {
-            if (fileUnsubscribe) fileUnsubscribe(); // Unsubscribe from previous
-            if (!isFirebaseAvailable || !currentUserId || !folderId) {
-                renderFiles([]); // Render empty list if no folderId
-                return;
-            }
+        const fetchFiles = (folderId) => {
+            if (!isFirebaseAvailable || !userId || !folderId) return;
 
-            const filesCollection = collection(db, `artifacts/${appId}/users/${currentUserId}/folders/${folderId}/files`);
+            detachListeners(fileListeners); // Clear old listeners
             
-            fileUnsubscribe = onSnapshot(filesCollection, (snapshot) => {
+            const filesCol = collection(db, 'artifacts', appId, 'users', userId, 'files');
+            const q = query(filesCol, where("folderId", "==", folderId));
+
+            const unsubscribe = onSnapshot(q, (querySnapshot) => {
                 const files = [];
-                snapshot.forEach(doc => {
+                querySnapshot.forEach((doc) => {
                     files.push({ id: doc.id, ...doc.data() });
                 });
                 renderFiles(files);
-                console.log("Files updated:", files);
             }, (error) => {
-                console.error("Error listening to files:", error);
-                showToast(`Error loading files: ${error.message}`, true);
+                handleFirebaseError(error);
+                renderFiles([]);
             });
-        }
+            
+            fileListeners.push(unsubscribe);
+        };
 
         /**
          * Renders the list of files in the UI.
          * @param {Array} files - An array of file objects.
          */
-        function renderFiles(files) {
-            const fileList = document.getElementById('file-list');
-            fileList.innerHTML = ''; // Clear
+        const renderFiles = (files) => {
+            fileListContainer.innerHTML = ''; // Clear existing list
             
             if (files.length === 0) {
-                document.getElementById('no-files-message').classList.remove('hidden');
+                noFilesMessage.classList.remove('hidden');
             } else {
-                document.getElementById('no-files-message').classList.add('hidden');
+                noFilesMessage.classList.add('hidden');
                 
-                files.sort((a, b) => a.name.localeCompare(b.name)); // Sort
+                // Sort files by creation date, newest first
+                files.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
                 
                 files.forEach(file => {
                     const fileEl = document.createElement('div');
-                    fileEl.className = "file-item bg-white p-4 rounded-lg shadow-sm flex items-center justify-between cursor-pointer hover:bg-gray-50";
-                    fileEl.dataset.fileUrl = file.downloadURL; // Store URL for opening
-                    fileEl.dataset.fileName = file.name;
-                    
-                    let iconClass = 'ph-file';
-                    switch (file.type) {
-                        case 'pdf': iconClass = 'ph-file-pdf'; break;
-                        case 'image': iconClass = 'ph-file-image'; break;
-                        case 'docx': iconClass = 'ph-file-doc'; break;
-                        case 'txt': iconClass = 'ph-file-text'; break;
+                    fileEl.className = 'file-item bg-white p-4 rounded-lg shadow-sm flex justify-between items-center cursor-pointer hover:bg-slate-50 transition duration-150';
+                    // Store all data on the element for the details modal
+                    fileEl.dataset.id = file.id;
+                    fileEl.dataset.name = file.name;
+                    fileEl.dataset.type = file.type;
+                    fileEl.dataset.url = file.downloadURL;
+                    fileEl.dataset.summary = file.aiSummary || '';
+                    fileEl.dataset.date = file.createdAt.toDate().toLocaleString();
+
+                    // Get appropriate icon based on file type
+                    let iconSvg = '';
+                    switch(file.type) {
+                        case 'pdf':
+                            iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500 flex-shrink-0"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M10 11v6"></path><path d="M13 11v6"></path><path d="M7 11v6"></path></svg>';
+                            break;
+                        case 'docx':
+                            iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500 flex-shrink-0"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M10.4 12.6c.2-1.2 1.5-2.6 2.6-2.6 1.8 0 2.6 1.8 2.6 3 0 2.8-2.2 4-3.9 4-1.4 0-2.6-.9-2.6-2.1 0-1.1.9-1.9 2.1-1.9H12"></path></svg>';
+                            break;
+                        case 'img':
+                            iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-500 flex-shrink-0"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>';
+                            break;
+                        default:
+                            iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-500 flex-shrink-0"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>';
                     }
-                    
+
                     fileEl.innerHTML = `
-                        <div class="flex items-center truncate min-w-0">
-                            <i class="ph ${iconClass} text-2xl text-indigo-500 mr-3 flex-shrink-0"></i>
-                            <span class="text-sm font-medium text-gray-700 truncate">${file.name}</span>
+                        <div class="flex items-center min-w-0">
+                            ${iconSvg}
+                            <span class="ml-3 font-medium text-slate-700 truncate">${file.name}</span>
                         </div>
-                        <span class="text-xs text-gray-400 flex-shrink-0 ml-2">${file.type}</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400"><path d="m9 18 6-6-6-6"/></svg>
                     `;
                     
-                    // Add click listener to open the file
-                    fileEl.addEventListener('click', () => handleFileClick(file.downloadURL, file.name));
+                    // Click listener to open file details
+                    fileEl.addEventListener('click', () => {
+                        handleFileClick(fileEl.dataset);
+                    });
                     
-                    fileList.appendChild(fileEl);
+                    fileListContainer.appendChild(fileEl);
                 });
             }
-        }
+        };
+
+
+        /**
+         * Clears and resets the import file modal to its default state.
+         */
+        const resetImportModal = () => {
+            fileImportInput.value = null;
+            fileToUpload = null;
+            fileImportFilename.textContent = '';
+            fileImportName.value = '';
+            fileImportType.value = 'pdf';
+            importFolderSelect.value = '';
+            aiAnalysisSection.classList.add('hidden');
+            aiAnalysisResult.classList.add('hidden');
+            aiAnalysisResult.textContent = '';
+            analyzeBtnText.textContent = '✨ Analyze Content (AI)';
+            analyzeBtnSpinner.classList.add('hidden');
+            saveFileBtn.disabled = false;
+            saveFileBtnText.textContent = 'Save & Store';
+            saveFileSpinner.classList.add('hidden');
+        };
         
         /**
-         * Handles the selection of a file from the user's device.
+         * Prepares and shows the import file modal.
+         * This is called by "Quick Import" (no folderId) or "Import File" (with folderId).
+         * @param {string|null} folderId - The ID of the folder (if already inside one).
          */
-        function handleFileSelection(event) {
-            const file = event.target.files[0];
-            if (!file) {
-                resetImportModal();
-                return;
+        const showImportModal = (folderId = null) => {
+            resetImportModal();
+            
+            // This is the logic update:
+            // Hide the folder selector if we are already inside a folder.
+            if (folderId) {
+                importFolderSelectContainer.style.display = 'none';
+                // The folderId is already set by `currentFolderId`
+            } else {
+                // We are at the root, show the selector
+                importFolderSelectContainer.style.display = 'block';
+                // Make sure `currentFolderId` is null
+                currentFolderId = null; 
             }
             
-            currentSelectedFile = file; // Store the file object
-            
-            // Update UI
-            document.getElementById('file-select-text').textContent = file.name;
-            document.getElementById('import-file-name').value = file.name.split('.').slice(0, -1).join('.'); // Pre-fill name without extension
-            
-            // Enable AI analysis button
-            const analyzeBtn = document.getElementById('analyze-content-btn');
-            analyzeBtn.disabled = false;
-            analyzeBtn.classList.remove('bg-gray-200', 'text-gray-500', 'cursor-not-allowed');
-            analyzeBtn.classList.add('bg-purple-100', 'text-purple-700', 'hover:bg-purple-200');
-        }
+            showModal('import-file-modal');
+        };
 
         /**
-         * Handles saving the imported file's metadata to Firestore and the file to Storage.
+         * Handles the file selection in the import modal.
+         * @param {Event} e - The file input change event.
          */
-        async function handleSaveFile() {
-            if (!isFirebaseAvailable) {
-                showToast("Cannot save file: Offline Mode.", true);
-                return;
+        const handleFileSelection = (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                fileToUpload = e.target.files[0];
+                fileImportFilename.textContent = fileToUpload.name;
+                
+                // Suggest a file name (remove original extension)
+                const nameWithoutExt = fileToUpload.name.split('.').slice(0, -1).join('.');
+                fileImportName.value = nameWithoutExt;
+                
+                // If it's an image, show the AI analysis button
+                if (fileToUpload.type.startsWith('image/')) {
+                    aiAnalysisSection.classList.remove('hidden');
+                    aiAnalysisResult.classList.add('hidden');
+                    aiAnalysisResult.textContent = '';
+                } else {
+                    aiAnalysisSection.classList.add('hidden');
+                }
+            } else {
+                fileToUpload = null;
+                fileImportFilename.textContent = '';
+                aiAnalysisSection.classList.add('hidden');
             }
+        };
 
-            const targetFolderId = document.getElementById('import-folder-select').value;
-            const fileName = document.getElementById('import-file-name').value.trim();
-            const convertType = document.getElementById('import-convert-type').value;
-            const aiSummary = document.getElementById('ai-analysis-summary').textContent;
+        /**
+         * Handles the saving of an imported file.
+         */
+        const handleSaveFile = async () => {
+            if (!isFirebaseAvailable || !userId) {
+                return showAppAlert("Cannot save file. Database not connected.");
+            }
             
-            if (!targetFolderId) {
-                showToast("Please select a target folder.", true);
-                return;
-            }
-            if (!fileName) {
-                showToast("File name cannot be empty.", true);
-                return;
-            }
-            if (!currentSelectedFile) {
-                showToast("Please select a file to upload.", true);
-                return;
+            // Determine the target folder ID
+            let targetFolderId = currentFolderId; // Will be set if importing from *inside* a folder
+            if (!targetFolderId) { 
+                // If at root, get it from the dropdown
+                targetFolderId = importFolderSelect.value;
             }
 
-            const saveBtn = document.getElementById('save-file-confirm-btn');
-            const btnText = document.getElementById('save-file-btn-text');
-            const spinner = document.getElementById('save-file-spinner');
+            const newFileName = fileImportName.value.trim();
+            const newFileType = fileImportType.value;
+
+            // Validation
+            if (!targetFolderId) return showAppAlert("Please select a target folder.");
+            if (!fileToUpload) return showAppAlert("Please select a file to upload.");
+            if (!newFileName) return showAppAlert("Please enter a name for the new file.");
 
             // Show loading state
-            saveBtn.disabled = true;
-            btnText.classList.add('hidden');
-            spinner.classList.remove('hidden');
-
+            saveFileBtn.disabled = true;
+            saveFileBtnText.textContent = 'Uploading...';
+            saveFileSpinner.classList.remove('hidden');
+            
             try {
                 // --- 1. Upload File to Firebase Storage ---
-                const storagePath = `artifacts/${appId}/users/${currentUserId}/files/${targetFolderId}/${fileName}`;
+                const storagePath = `artifacts/${appId}/users/${userId}/files/${Date.now()}-${fileToUpload.name}`;
                 const storageRef = ref(storage, storagePath);
                 
-                console.log(`Uploading file to: ${storagePath}`);
-                const snapshot = await uploadBytes(storageRef, currentSelectedFile);
-                
-                // --- 2. Get Download URL ---
-                const downloadURL = await getDownloadURL(snapshot.ref);
-                console.log("File uploaded, URL:", downloadURL);
+                console.log(`Uploading to ${storagePath}...`);
+                const uploadResult = await uploadBytes(storageRef, fileToUpload);
+                const downloadURL = await getDownloadURL(uploadResult.ref);
+                console.log("File uploaded successfully. URL:", downloadURL);
 
-                // --- 3. Save Metadata to Firestore ---
-                const filesCollection = collection(db, `artifacts/${appId}/users/${currentUserId}/folders/${targetFolderId}/files`);
-                
-                await addDoc(filesCollection, {
-                    name: fileName,
-                    type: convertType,
-                    originalFileName: currentSelectedFile.name,
-                    size: currentSelectedFile.size,
-                    uploadedAt: new Date().toISOString(),
-                    aiSummary: aiSummary || "",
+                // --- 2. Save Metadata to Firestore ---
+                const filesCol = collection(db, 'artifacts', appId, 'users', userId, 'files');
+                await addDoc(filesCol, {
+                    folderId: targetFolderId,
+                    name: newFileName,
+                    type: newFileType,
+                    originalName: fileToUpload.name,
                     storagePath: storagePath,
-                    downloadURL: downloadURL
+                    downloadURL: downloadURL,
+                    aiSummary: aiAnalysisResult.textContent || '',
+                    createdAt: Timestamp.now()
                 });
 
-                showToast("File saved successfully!");
-                hideModal('quick-import-modal');
-                
+                // --- 3. Finish ---
+                hideModal('import-file-modal');
+                // If we were in the file view, the onSnapshot listener will
+                // automatically refresh the list.
+                // If we were in the folder view, we don't need to do anything.
+
             } catch (error) {
-                console.error("Error saving file:", error);
-                showToast(`Error: ${error.message}`, true);
+                handleFirebaseError(error);
+                showAppAlert("Failed to save file. Check console and storage rules.");
             } finally {
                 // Hide loading state
-                saveBtn.disabled = false;
-                btnText.classList.remove('hidden');
-                spinner.classList.add('hidden');
+                saveFileBtn.disabled = false;
+                saveFileBtnText.textContent = 'Save & Store';
+                saveFileSpinner.classList.add('hidden');
             }
-        }
-        
+        };
+
         /**
-         * Handles clicking a file: opens it in a new tab.
-         * @param {string} fileUrl - The download URL of the file.
-         * @param {string} fileName - The name of the file.
+         * Handles clicking on a file in the list.
+         * Opens the file in a new tab for viewing.
+         * @param {DOMStringMap} fileData - The dataset from the file element.
          */
-        function handleFileClick(fileUrl, fileName) {
+        const handleFileClick = (fileData) => {
+            const fileUrl = fileData.url;
             if (!fileUrl) {
-                showToast("No file URL found, cannot open.", true);
-                return;
+                return showAppAlert("This file has no URL and cannot be opened.");
             }
-            console.log(`Opening file: ${fileName} at ${fileUrl}`);
             
-            // Open the file in a new tab
-            window.open(fileUrl, '_blank');
-        }
+            // This is the "Open" (not "Download") logic
+            // It will open the file in a new tab.
+            // This works for images, PDFs, text, etc.
+            // It might be blocked by pop-up blockers!
+            try {
+                window.open(fileUrl, '_blank');
+            } catch (e) {
+                console.error("Failed to open new tab:", e);
+                showAppAlert("Could not open file. Pop-up may be blocked.");
+            }
+        };
 
-        // -----------------------------------------------------------------
-        // 8. FIRESTORE: REMINDER MANAGEMENT
-        // -----------------------------------------------------------------
 
-        let reminderUnsubscribe = null; // To store the reminder listener unsubscribe
+        // --- REMINDER MANAGEMENT & ALARM ---
 
         /**
-         * Sets up a real-time listener for the user's reminders.
+         * Fetches all reminders from Firestore and listens for changes.
          */
-        function setupReminderListener() {
-            if (reminderUnsubscribe) reminderUnsubscribe();
-            if (!isFirebaseAvailable || !currentUserId) return;
-
-            const remindersCollection = collection(db, `artifacts/${appId}/users/${currentUserId}/reminders`);
+        const fetchReminders = () => {
+            if (!isFirebaseAvailable || !userId) return;
             
-            reminderUnsubscribe = onSnapshot(remindersCollection, (snapshot) => {
+            detachListeners(reminderListeners);
+            
+            const remindersCol = collection(db, 'artifacts', appId, 'users', userId, 'reminders');
+            const q = query(remindersCol);
+
+            const unsubscribe = onSnapshot(q, (querySnapshot) => {
                 const reminders = [];
-                snapshot.forEach(doc => {
+                querySnapshot.forEach((doc) => {
                     reminders.push({ id: doc.id, ...doc.data() });
                 });
                 renderReminders(reminders);
-                console.log("Reminders updated:", reminders);
+                checkReminders(reminders); // Check immediately on new data
             }, (error) => {
-                console.error("Error listening to reminders:", error);
-                showToast(`Error loading reminders: ${error.message}`, true);
+                handleFirebaseError(error);
+                renderReminders([]);
             });
-        }
+            
+            reminderListeners.push(unsubscribe);
+        };
 
         /**
          * Renders the list of reminders in the UI.
          * @param {Array} reminders - An array of reminder objects.
          */
-        function renderReminders(reminders) {
-            const reminderList = document.getElementById('reminders-list');
-            reminderList.innerHTML = ''; // Clear
+        const renderReminders = (reminders) => {
+            remindersListContainer.innerHTML = '';
             
             if (reminders.length === 0) {
-                document.getElementById('no-reminders-message').classList.remove('hidden');
+                noRemindersMessage.classList.remove('hidden');
             } else {
-                document.getElementById('no-reminders-message').classList.add('hidden');
+                noRemindersMessage.classList.add('hidden');
                 
-                // Sort by due time, soonest first
-                reminders.sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt));
+                // Sort by due date, earliest first
+                reminders.sort((a, b) => a.dueAt.toMillis() - b.dueAt.toMillis());
                 
                 reminders.forEach(reminder => {
                     const reminderEl = document.createElement('div');
-                    const isOverdue = new Date(reminder.dueAt) < new Date();
+                    reminderEl.className = 'bg-white p-4 rounded-lg shadow-sm relative';
                     
-                    reminderEl.className = `reminder-item bg-white p-4 rounded-lg shadow-sm ${isOverdue ? 'opacity-60 border-l-4 border-red-400' : ''}`;
+                    const dueDate = reminder.dueAt.toDate();
+                    const isOverdue = dueDate < new Date();
                     
-                    const dueAt = new Date(reminder.dueAt);
-                    const formattedDate = dueAt.toLocaleString(undefined, {
-                        dateStyle: 'medium',
-                        timeStyle: 'short'
-                    });
-                    
-                    let subtaskHTML = '';
+                    let subTaskHtml = '';
                     if (reminder.subTasks && reminder.subTasks.length > 0) {
-                        subtaskHTML = `
-                            <div class="mt-3 pt-3 border-t border-gray-100">
-                                <h4 class="text-xs font-semibold text-gray-600 mb-1">Sub-tasks:</h4>
-                                <ul class="list-none space-y-1 subtask-list">
-                                    ${reminder.subTasks.map(task => `<li>${escapeHTML(task)}</li>`).join('')}
-                                </ul>
+                        subTaskHtml = `
+                            <div class="mt-2 pt-2 pl-4 border-l-2 border-indigo-200 space-y-1">
+                                ${reminder.subTasks.map(task => `<p class="text-sm text-slate-600">- ${task}</p>`).join('')}
                             </div>
                         `;
                     }
                     
                     reminderEl.innerHTML = `
-                        <div class="flex justify-between items-center">
-                            <div>
-                                <span class="text-sm font-medium text-gray-800 block">${escapeHTML(reminder.title)}</span>
-                                <span class="text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-500'}">${formattedDate} ${isOverdue ? '(Overdue)' : ''}</span>
-                            </div>
-                            <button class="delete-reminder-btn text-gray-400 hover:text-red-500" data-reminder-id="${reminder.id}">
-                                <i class="ph ph-trash"></i>
-                            </button>
-                        </div>
-                        ${subtaskHTML}
+                        <button class="delete-reminder-btn absolute top-2 right-2 text-red-400 hover:text-red-600 p-1 rounded-full transition" data-id="${reminder.id}" title="Delete reminder">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                        <p class="font-semibold text-slate-800 pr-6">${reminder.title}</p>
+                        <p class="text-sm ${isOverdue ? 'text-red-500 font-medium' : 'text-slate-500'}">
+                            Due: ${dueDate.toLocaleString()} ${isOverdue ? '(Overdue)' : ''}
+                        </p>
+                        ${subTaskHtml}
                     `;
                     
-                    // Add delete listener
-                    reminderEl.querySelector('.delete-reminder-btn').addEventListener('click', () => {
+                    reminderEl.querySelector('.delete-reminder-btn').addEventListener('click', (e) => {
+                        e.stopPropagation();
                         handleDeleteReminder(reminder.id);
                     });
                     
-                    reminderList.appendChild(reminderEl);
+                    remindersListContainer.appendChild(reminderEl);
                 });
             }
-        }
+        };
         
         /**
-         * Handles the creation of a new reminder in Firestore.
+         * Clears and resets the add reminder modal.
          */
-        async function handleCreateReminder() {
-            if (!isFirebaseAvailable) {
-                showToast("Cannot set reminder: Offline Mode.", true);
-                return;
+        const resetReminderModal = () => {
+            reminderTitle.value = '';
+            reminderDatetime.value = '';
+            taskBreakdownLoading.classList.add('hidden');
+            taskBreakdownResult.classList.add('hidden');
+            taskBreakdownList.innerHTML = '';
+            currentSubTasks = [];
+        };
+
+        /**
+         * Handles setting a new reminder.
+         */
+        const handleSetAlarm = async () => {
+            if (!isFirebaseAvailable || !userId) {
+                return showAppAlert("Cannot set reminder. Database not connected.");
             }
-            
-            const title = document.getElementById('new-reminder-title').value.trim();
-            const dueAt = document.getElementById('new-reminder-time').value;
-            
-            if (!title || !dueAt) {
-                showToast("Please provide both a title and a due time.", true);
-                return;
-            }
-            
-            if (new Date(dueAt) < new Date()) {
-                showToast("Cannot set a reminder in the past.", true);
-                return;
+
+            const title = reminderTitle.value.trim();
+            const datetime = reminderDatetime.value;
+
+            if (!title || !datetime) {
+                return showAppAlert("Please enter a title and a due date/time.");
             }
 
             try {
-                const remindersCollection = collection(db, `artifacts/${appId}/users/${currentUserId}/reminders`);
-                await addDoc(remindersCollection, {
-                    title: title,
-                    dueAt: new Date(dueAt).toISOString(),
-                    createdAt: new Date().toISOString(),
-                    subTasks: currentSubTasks // Save the generated sub-tasks
-                });
+                const dueAt = new Date(datetime);
+                const remindersCol = collection(db, 'artifacts', appId, 'users', userId, 'reminders');
                 
-                showToast("Reminder set successfully!");
+                await addDoc(remindersCol, {
+                    title: title,
+                    dueAt: Timestamp.fromDate(dueAt),
+                    subTasks: currentSubTasks, // Add the AI-generated sub-tasks
+                    createdAt: Timestamp.now()
+                });
+
+                resetReminderModal();
                 hideModal('add-reminder-modal');
-                // Resetting is handled by the hideModal function
                 
             } catch (error) {
-                console.error("Error creating reminder:", error);
-                showToast(`Error: ${error.message}`, true);
+                handleFirebaseError(error);
+                showAppAlert("Failed to set reminder.");
             }
-        }
+        };
         
         /**
-         * Handles the deletion of a reminder from Firestore.
+         * Handles deleting a reminder.
          * @param {string} reminderId - The ID of the reminder to delete.
          */
-        async function handleDeleteReminder(reminderId) {
-            if (!isFirebaseAvailable) {
-                showToast("Cannot delete reminder: Offline Mode.", true);
-                return;
+        const handleDeleteReminder = async (reminderId) => {
+            if (!isFirebaseAvailable || !userId) {
+                return showAppAlert("Cannot delete reminder. Database not connected.");
             }
             
             try {
-                const reminderDoc = doc(db, `artifacts/${appId}/users/${currentUserId}/reminders/${reminderId}`);
+                const reminderDoc = doc(db, 'artifacts', appId, 'users', userId, 'reminders', reminderId);
                 await deleteDoc(reminderDoc);
-                showToast("Reminder deleted.");
-                
+                console.log(`Reminder ${reminderId} deleted.`);
             } catch (error) {
-                console.error("Error deleting reminder:", error);
-                showToast(`Error: ${error.message}`, true);
+                handleFirebaseError(error);
+                showAppAlert("Failed to delete reminder.");
             }
-        }
-
-        // -----------------------------------------------------------------
-        // 9. ALARM & AUDIO LOGIC
-        // -----------------------------------------------------------------
-        
-        // Create a single, reusable AudioContext
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        };
 
         /**
-         * Plays a two-beep alarm sound.
+         * Checks all reminders to see if any are due.
+         * @param {Array} reminders - An array of reminder objects (optional).
          */
-        function playBeepAlarm() {
-            if (audioContext.state === 'suspended') {
-                audioContext.resume();
+        const checkReminders = async (reminders = null) => {
+            if (!isFirebaseAvailable || !userId) return;
+
+            // If reminders aren't passed in, fetch them manually.
+            // This is for the setInterval check.
+            if (!reminders) {
+                try {
+                    const remindersCol = collection(db, 'artifacts', appId, 'users', userId, 'reminders');
+                    const snapshot = await getDocs(remindersCol);
+                    reminders = [];
+                    snapshot.forEach(doc => reminders.push({ id: doc.id, ...doc.data() }));
+                } catch (error) {
+                    handleFirebaseError(error);
+                    return;
+                }
             }
+
+            const now = new Date();
             
-            function beep(frequency, duration, delay) {
-                setTimeout(() => {
+            reminders.forEach(reminder => {
+                const dueAt = reminder.dueAt.toDate();
+                // Check if due, not already alarmed, and not in the distant past (e.g., > 1 day old)
+                const isOverdue = dueAt <= now;
+                const isNotAlarmed = !alarmedReminders.has(reminder.id);
+                const isRecent = (now - dueAt) < (24 * 60 * 60 * 1000); // Within last 24 hours
+
+                if (isOverdue && isNotAlarmed && isRecent) {
+                    console.log("ALARM TRIGGERED:", reminder.title);
+                    playBeepAlarm();
+                    alarmNotificationTitle.textContent = reminder.title;
+                    alarmNotificationModal.classList.remove('hidden');
+                    alarmedReminders.add(reminder.id); // Mark as alarmed
+                }
+            });
+        };
+        
+        /**
+         * Plays a beep-beep sound using the Web Audio API.
+         */
+        const playBeepAlarm = () => {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                const playBeep = (startTime, freq) => {
                     const oscillator = audioContext.createOscillator();
                     const gainNode = audioContext.createGain();
                     
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(freq, startTime);
                     oscillator.connect(gainNode);
                     gainNode.connect(audioContext.destination);
                     
-                    oscillator.type = 'sine'; // A clean beep
-                    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+                    gainNode.gain.setValueAtTime(0, startTime);
+                    gainNode.gain.linearRampToValueAtTime(0.5, startTime + 0.01); // Quick attack
+                    gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.15); // Decay
                     
-                    gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
-                    gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration / 1000);
-                    
-                    oscillator.start(audioContext.currentTime);
-                    oscillator.stop(audioContext.currentTime + duration / 1000);
-                }, delay);
-            }
+                    oscillator.start(startTime);
+                    oscillator.stop(startTime + 0.15);
+                };
 
-            beep(880, 200, 0);   // First beep (A5)
-            beep(880, 200, 300); // Second beep, 300ms later
-        }
-
-        /**
-         * Checks Firestore for any overdue reminders.
-         */
-        async function checkReminders() {
-            if (!isFirebaseAvailable || !currentUserId) return;
-            
-            console.log("Checking for due reminders...");
-            
-            try {
-                const now = new Date();
-                const remindersCollection = collection(db, `artifacts/${appId}/users/${currentUserId}/reminders`);
-                const q = query(remindersCollection, where("dueAt", "<=", now.toISOString()));
-                
-                const snapshot = await getDocs(q);
-                
-                snapshot.forEach(doc => {
-                    const reminder = { id: doc.id, ...doc.data() };
-                    
-                    // Check if we've already alarmed for this reminder
-                    if (!alarmedReminders.has(reminder.id)) {
-                        console.log("Triggering alarm for:", reminder.title);
-                        
-                        // Show visual alarm
-                        document.getElementById('alarm-title').textContent = reminder.title;
-                        document.getElementById('alarm-notification').classList.add('show');
-                        
-                        // Play sound
-                        playBeepAlarm();
-                        
-                        // Mark as alarmed to prevent re-triggering
-                        alarmedReminders.add(reminder.id);
-                    }
-                });
+                const now = audioContext.currentTime;
+                playBeep(now, 880); // First beep
+                playBeep(now + 0.2, 880); // Second beep
                 
             } catch (error) {
-                // This can fail if the composite index is not created.
-                // Firebase console will provide a link to create it.
-                console.error("Error checking reminders:", error);
+                console.error("Web Audio API error:", error);
+                // Fallback for browsers that might block it
             }
-        }
-        
-        // -----------------------------------------------------------------
-        // 10. GEMINI API: STUDY AI (TEXT)
-        // -----------------------------------------------------------------
-        
-        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=`; // Key is blank, handled by host
-        const STUDY_AI_SYSTEM_PROMPT = "You are a friendly, knowledgeable, and encouraging student tutor. Your goal is to help students understand complex topics. Break down answers into clear, simple, and actionable steps or definitions. Use paragraphs, but avoid markdown like lists or bolding. Always cite your sources if you used them. Be concise and supportive.";
+        };
+
+
+        // --- GEMINI AI FUNCTIONS ---
+
+        // Gemini API Configuration
+        const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models";
+        // NOTE: The API Key is intentionally left as an empty string.
+        // The host environment (Canvas) will inject the necessary key.
+        const GEMINI_API_KEY = ""; 
+        const GEMINI_TEXT_MODEL = "gemini-2.5-flash-preview-09-2025";
+        const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
         /**
-         * Fetches a response from the Gemini API with exponential backoff.
-         * @param {object} payload - The full payload to send to the API.
-         * @param {number} [retries=3] - Number of retries.
-         * @param {number} [delay=1000] - Initial delay in ms.
+         * Utility function to handle exponential backoff for API retries.
+         * @param {Function} apiCallFunction - The async function to call (e.g., fetch).
+         * @param {number} maxRetries - Maximum number of retries.
+         * @returns {Promise<any>} - The result of the successful API call.
          */
-        async function fetchGeminiWithBackoff(payload, retries = 3, delay = 1000) {
-            try {
-                const response = await fetch(GEMINI_API_URL, {
+        const fetchWithExponentialBackoff = async (apiCallFunction, maxRetries = 5) => {
+            let attempt = 0;
+            let delay = 1000; // Start with 1 second
+
+            while (attempt < maxRetries) {
+                try {
+                    const response = await apiCallFunction();
+                    if (!response.ok) {
+                        // Handle non-transient errors (like 400 Bad Request) immediately
+                        if (response.status >= 400 && response.status < 500) {
+                            console.error(`API Error ${response.status}:`, await response.json());
+                            throw new Error(`API request failed: ${response.statusText}`);
+                        }
+                        // Handle server-side or rate-limiting errors (like 5xx, 429)
+                        throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                    }
+                    return await response.json(); // Success
+                } catch (error) {
+                    attempt++;
+                    if (attempt >= maxRetries) {
+                        console.error("API call failed after max retries.");
+                        throw error; // Rethrow the last error
+                    }
+                    console.warn(`API call attempt ${attempt} failed. Retrying in ${delay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2; // Exponential backoff
+                }
+            }
+        };
+
+        /**
+         * Generic function to call the Gemini generateContent API.
+         * @param {string} model - The model name (e.g., 'gemini-2.5-flash-preview-09-2025').
+         * @param {object} payload - The request payload.
+         * @returns {Promise<object>} - The parsed JSON response.
+         */
+        const callGeminiApi = async (model, payload) => {
+            const apiUrl = `${GEMINI_API_URL}/${model}:generateContent?key=${GEMINI_API_KEY}`;
+            
+            return fetchWithExponentialBackoff(async () => {
+                return fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-
-                if (!response.ok) {
-                    if (response.status === 429 && retries > 0) {
-                        console.warn(`Throttled (429). Retrying in ${delay}ms...`);
-                        await new Promise(res => setTimeout(res, delay));
-                        return fetchGeminiWithBackoff(payload, retries - 1, delay * 2);
-                    }
-                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
-                }
-                return await response.json();
-
-            } catch (error) {
-                if (retries > 0) {
-                    console.warn(`Fetch error: ${error.message}. Retrying in ${delay}ms...`);
-                    await new Promise(res => setTimeout(res, delay));
-                    return fetchGeminiWithBackoff(payload, retries - 1, delay * 2);
-                }
-                console.error("Fetch failed after retries:", error);
-                throw error;
-            }
-        }
+            });
+        };
         
         /**
-         * Handles the user's query to the Study AI.
-         */
-        async function handleStudyQuery() {
-            const input = document.getElementById('study-ai-input');
-            const query = input.value.trim();
-            if (!query) return;
-
-            const loading = document.getElementById('study-ai-loading');
-            const resultContainer = document.getElementById('study-ai-result-container');
-            const resultTextEl = document.getElementById('study-ai-result-text');
-            const sourcesEl = document.getElementById('study-ai-sources');
-            const speakBtn = document.getElementById('study-ai-speak-btn');
-            
-            // Reset UI
-            loading.classList.remove('hidden');
-            resultContainer.classList.add('hidden');
-            resultTextEl.textContent = '';
-            sourcesEl.innerHTML = '';
-            speakBtn.classList.add('hidden');
-            lastAiResultText = "";
-            
-            try {
-                const payload = {
-                    contents: [{ parts: [{ text: query }] }],
-                    tools: [{ "google_search": {} }], // Use Google Search grounding
-                    systemInstruction: {
-                        parts: [{ text: STUDY_AI_SYSTEM_PROMPT }]
-                    },
-                };
-
-                const result = await fetchGeminiWithBackoff(payload);
-                
-                const candidate = result.candidates?.[0];
-                if (candidate && candidate.content?.parts?.[0]?.text) {
-                    const text = candidate.content.parts[0].text;
-                    lastAiResultText = text; // Save for TTS
-                    resultTextEl.textContent = text;
-                    speakBtn.classList.remove('hidden');
-
-                    // Extract and display sources
-                    const sources = candidate.groundingMetadata?.groundingAttributions
-                        ?.map(attr => attr.web)
-                        .filter(web => web?.uri && web.title) || [];
-                    
-                    if (sources.length > 0) {
-                        sourcesEl.innerHTML = sources.map(source => 
-                            `<a href="${source.uri}" target="_blank" class="block text-blue-600 hover:underline truncate" title="${source.title}">${source.title}</a>`
-                        ).join('');
-                    } else {
-                        sourcesEl.innerHTML = `<span class="text-gray-500">No web sources cited.</span>`;
-                    }
-                    
-                } else {
-                    throw new Error("Invalid response structure from API.");
-                }
-
-            } catch (error) {
-                console.error("Error handling study query:", error);
-                resultTextEl.textContent = `Sorry, an error occurred: ${error.message}`;
-            } finally {
-                loading.classList.add('hidden');
-                resultContainer.classList.remove('hidden');
-                input.value = ''; // Clear input
-            }
-        }
-        
-        // -----------------------------------------------------------------
-        // 11. GEMINI API: FILE ANALYZER (IMAGE)
-        // -----------------------------------------------------------------
-        
-        /**
-         * Analyzes the selected file content using Gemini.
-         */
-        async function analyzeFileContent() {
-            if (!currentSelectedFile) {
-                showToast("Please select a file first.", true);
-                return;
-            }
-
-            const btn = document.getElementById('analyze-content-btn');
-            const btnText = document.getElementById('analyze-content-btn-text');
-            const summaryContainer = document.getElementById('ai-analysis-container');
-            const summaryText = document.getElementById('ai-analysis-summary');
-            
-            btn.disabled = true;
-            btnText.textContent = "Analyzing...";
-
-            try {
-                const base64ImageData = await base64EncodeImage(currentSelectedFile);
-                
-                const payload = {
-                    contents: [
-                        {
-                            role: "user",
-                            parts: [
-                                { text: "You are an academic assistant. Analyze this image of notes, a whiteboard, or a document. Provide a 1-2 sentence summary and a concise, academic-style filename (e.g., 'Keto-Enol_Tautomerism_Diagram'). Respond ONLY with a JSON object like: {\"summary\": \"...\", \"filename\": \"...\"}" },
-                                {
-                                    inlineData: {
-                                        mimeType: currentSelectedFile.type,
-                                        data: base64ImageData
-                                    }
-                                }
-                            ]
-                        }
-                    ],
-                    generationConfig: {
-                        responseMimeType: "application/json",
-                    }
-                };
-                
-                const result = await fetchGeminiWithBackoff(payload);
-                
-                const candidate = result.candidates?.[0];
-                if (candidate && candidate.content?.parts?.[0]?.text) {
-                    const jsonText = candidate.content.parts[0].text;
-                    const parsed = JSON.parse(jsonText);
-                    
-                    if (parsed.summary && parsed.filename) {
-                        summaryText.textContent = parsed.summary;
-                        summaryContainer.classList.remove('hidden');
-                        document.getElementById('import-file-name').value = parsed.filename;
-                        showToast("Analysis complete!");
-                    } else {
-                        throw new Error("Invalid JSON schema in response.");
-                    }
-                } else {
-                    throw new Error("Invalid response structure from API.");
-                }
-
-            } catch (error) {
-                console.error("Error analyzing file content:", error);
-                showToast(`Analysis failed: ${error.message}`, true);
-            } finally {
-                btn.disabled = false;
-                btnText.textContent = "✨ Analyze Content";
-            }
-        }
-
-        /**
-         * Helper to convert an image file to Base64.
+         * Converts an image file to Base64 and returns mime type and data.
          * @param {File} file - The image file.
+         * @returns {Promise<{base64: string, mimeType: string, fullDataUrl: string}>}
          */
-        function base64EncodeImage(file) {
+        const base64EncodeImage = (file) => {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onloadend = () => {
-                    const base64Data = reader.result.split(',')[1];
-                    resolve(base64Data);
+                    const fullDataUrl = reader.result;
+                    const [header, base64Data] = fullDataUrl.split(',');
+                    const mimeType = header.match(/:(.*?);/)[1];
+                    resolve({ base64: base64Data, mimeType, fullDataUrl });
                 };
                 reader.onerror = reject;
                 reader.readAsDataURL(file);
             });
-        }
-        
-        // -----------------------------------------------------------------
-        // 12. GEMINI API: TASK BREAKDOWN (REMINDERS)
-        // -----------------------------------------------------------------
+        };
 
         /**
-         * Asks Gemini to break down a task title into a checklist.
+         * Handles the Study AI query (both text and multimodal).
          */
-        async function handleTaskBreakdown() {
-            const titleInput = document.getElementById('new-reminder-title');
-            const taskTitle = titleInput.value.trim();
-            if (!taskTitle) {
-                showToast("Please enter a task title first.", true);
-                return;
+        const handleStudyQuery = async () => {
+            const prompt = studyAiInput.value.trim();
+            if (!prompt && !currentStudyImage) {
+                return showAppAlert("Please enter a question or upload an image.");
+            }
+
+            // Show loading
+            studyAiLoading.classList.remove('hidden');
+            studyAiOutput.innerHTML = '';
+            studyAiResultHeader.classList.add('hidden');
+            studyAiSources.classList.add('hidden');
+            studyAiSourcesList.innerHTML = '';
+            studyAiAskBtn.disabled = true;
+            studyAiSpeakBtn.classList.add('hidden');
+            lastStudyAiResult = "";
+
+            try {
+                let payload;
+                let useGrounding = false;
+
+                // System instruction for the AI
+                const systemInstruction = {
+                    parts: [{
+                        text: "You are a friendly and knowledgeable student tutor. Answer the user's question clearly and concisely. If it's a complex topic, provide a definition or a short, actionable study plan. Use simple language."
+                    }]
+                };
+
+                if (currentStudyImage) {
+                    // --- Multimodal Query (Image + Text) ---
+                    payload = {
+                        contents: [{
+                            parts: [
+                                { text: prompt },
+                                {
+                                    inlineData: {
+                                        mimeType: currentStudyImage.mimeType,
+                                        data: currentStudyImage.base64
+                                    }
+                                }
+                            ]
+                        }],
+                        systemInstruction: systemInstruction
+                    };
+                } else {
+                    // --- Text-Only Query (with Grounding) ---
+                    useGrounding = true;
+                    payload = {
+                        contents: [{ parts: [{ text: prompt }] }],
+                        tools: [{ "google_search": {} }],
+                        systemInstruction: systemInstruction
+                    };
+                }
+
+                const result = await callGeminiApi(GEMINI_TEXT_MODEL, payload);
+
+                const candidate = result.candidates?.[0];
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    const text = candidate.content.parts[0].text;
+                    // Sanitize and format text (simple markdown to HTML)
+                    let html = text
+                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                        .replace(/\n/g, '<br>');
+
+                    studyAiOutput.innerHTML = html;
+                    studyAiResultHeader.classList.remove('hidden');
+                    lastStudyAiResult = text; // Save for TTS
+                    studyAiSpeakBtn.classList.remove('hidden');
+
+                    // Handle grounding (citations)
+                    if (useGrounding) {
+                        const groundingMetadata = candidate.groundingMetadata;
+                        if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                            const sources = groundingMetadata.groundingAttributions
+                                .map(attribution => ({
+                                    uri: attribution.web?.uri,
+                                    title: attribution.web?.title,
+                                }))
+                                .filter(source => source.uri && source.title);
+                            
+                            if (sources.length > 0) {
+                                sources.forEach(source => {
+                                    const li = document.createElement('li');
+                                    li.innerHTML = `<a href="${source.uri}" target="_blank" class="text-indigo-600 hover:underline">${source.title}</a>`;
+                                    studyAiSourcesList.appendChild(li);
+                                });
+                                studyAiSources.classList.remove('hidden');
+                            }
+                        }
+                    }
+                } else {
+                    showAppAlert("The AI returned an empty response.");
+                }
+
+            } catch (error) {
+                console.error("Gemini AI Error:", error);
+                showAppAlert("Failed to get AI response. Check console for details.");
+            } finally {
+                // Hide loading
+                studyAiLoading.classList.add('hidden');
+                studyAiAskBtn.disabled = false;
+                // Reset image
+                currentStudyImage = null;
+                studyAiImageInput.value = null;
+                studyAiImageFilename.textContent = 'Upload an image (optional)';
+                studyAiImagePreview.classList.add('hidden');
+            }
+        };
+
+        /**
+         * Handles image selection for the Study AI.
+         */
+        const handleStudyAiImageSelect = async (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                const file = e.target.files[0];
+                try {
+                    const { base64, mimeType, fullDataUrl } = await base64EncodeImage(file);
+                    currentStudyImage = { base64, mimeType, fullDataUrl };
+                    studyAiImageFilename.textContent = file.name;
+                    studyAiImagePreview.src = fullDataUrl;
+                    studyAiImagePreview.classList.remove('hidden');
+                } catch (error) {
+                    console.error("Image encoding error:", error);
+                    showAppAlert("Failed to read image file.");
+                }
+            }
+        };
+
+        /**
+         * Calls Gemini AI to analyze file content (for import modal).
+         */
+        const handleAnalyzeFileContent = async () => {
+            if (!fileToUpload || !fileToUpload.type.startsWith('image/')) {
+                return showAppAlert("Please select an image file first.");
+            }
+
+            analyzeBtnText.textContent = 'Analyzing...';
+            analyzeBtnSpinner.classList.remove('hidden');
+            aiAnalysisResult.classList.add('hidden');
+            analyzeFileContentBtn.disabled = true;
+
+            try {
+                const { base64, mimeType } = await base64EncodeImage(fileToUpload);
+                
+                const payload = {
+                    contents: [{
+                        parts: [
+                            { text: "Analyze this image (which is a photo of notes, a slide, or a document). Provide a brief 1-sentence summary of the content and suggest a good, academic-style filename (e.g., 'Chem_Lab_Titration_Diagram'). Return ONLY a JSON object with keys 'summary' and 'filename'." },
+                            {
+                                inlineData: {
+                                    mimeType: mimeType,
+                                    data: base64
+                                }
+                            }
+                        ]
+                    }],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                    }
+                };
+
+                const result = await callGeminiApi(GEMINI_TEXT_MODEL, payload);
+
+                const candidate = result.candidates?.[0];
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    const jsonText = candidate.content.parts[0].text;
+                    const data = JSON.parse(jsonText);
+                    
+                    if (data.summary && data.filename) {
+                        aiAnalysisResult.textContent = `Summary: ${data.summary}`;
+                        aiAnalysisResult.classList.remove('hidden');
+                        fileImportName.value = data.filename; // Auto-fill the filename
+                    } else {
+                        throw new Error("AI response did not contain 'summary' or 'filename'.");
+                    }
+                } else {
+                    throw new Error("AI returned an empty response.");
+                }
+
+            } catch (error) {
+                console.error("Gemini Analysis Error:", error);
+                showAppAlert("Failed to analyze image content.");
+            } finally {
+                analyzeBtnText.textContent = '✨ Analyze Content (AI)';
+                analyzeBtnSpinner.classList.add('hidden');
+                analyzeFileContentBtn.disabled = false;
+            }
+        };
+
+        /**
+         * Calls Gemini AI to break down a reminder task.
+         */
+        const handleTaskBreakdown = async () => {
+            const title = reminderTitle.value.trim();
+            if (!title) {
+                return showAppAlert("Please enter a task title first.");
             }
             
-            const btn = document.getElementById('breakdown-task-btn');
-            const icon = document.getElementById('breakdown-task-icon');
-            const spinner = document.getElementById('breakdown-task-spinner');
-            const subtaskContainer = document.getElementById('subtask-container');
-            const subtaskList = document.getElementById('subtask-preview-list');
-            
-            // Show loading
-            btn.disabled = true;
-            icon.classList.add('hidden');
-            spinner.classList.remove('hidden');
-            subtaskContainer.classList.add('hidden');
-            subtaskList.innerHTML = '';
+            taskBreakdownLoading.classList.remove('hidden');
+            taskBreakdownResult.classList.add('hidden');
+            taskBreakdownList.innerHTML = '';
+            breakdownTaskBtn.disabled = true;
             currentSubTasks = [];
             
             try {
                 const payload = {
                     contents: [{
-                        parts: [{ text: `You are an academic planner. Break down the following student task into 3-5 simple, actionable sub-tasks. Task: "${taskTitle}". Respond ONLY with a JSON array of strings, like: ["Step 1", "Step 2", "Step 3"]` }]
+                        parts: [{
+                            text: `Break down this complex student task into 3-5 simple, actionable sub-tasks: "${title}".
+                            Return ONLY a valid JSON array of strings.
+                            Example: ["Research topic", "Create outline", "Write first draft", "Proofread"]`
+                        }]
                     }],
                     generationConfig: {
                         responseMimeType: "application/json",
-                        responseSchema: {
-                            type: "ARRAY",
-                            items: { type: "STRING" }
-                        }
                     }
                 };
-
-                const result = await fetchGeminiWithBackoff(payload);
+                
+                const result = await callGeminiApi(GEMINI_TEXT_MODEL, payload);
                 
                 const candidate = result.candidates?.[0];
                 if (candidate && candidate.content?.parts?.[0]?.text) {
@@ -1623,222 +1874,262 @@
                     const subTasks = JSON.parse(jsonText);
                     
                     if (Array.isArray(subTasks) && subTasks.length > 0) {
-                        currentSubTasks = subTasks; // Save for later
-                        subtaskList.innerHTML = subTasks.map(task => `<li>${escapeHTML(task)}</li>`).join('');
-                        subtaskContainer.classList.remove('hidden');
+                        currentSubTasks = subTasks; // Save for Firestore
+                        subTasks.forEach(task => {
+                            const li = document.createElement('li');
+                            li.textContent = task;
+                            taskBreakdownList.appendChild(li);
+                        });
+                        taskBreakdownResult.classList.remove('hidden');
                     } else {
-                        throw new Error("Received empty or invalid sub-task array.");
+                        throw new Error("AI did not return a valid array of tasks.");
                     }
                 } else {
-                    throw new Error("Invalid response structure from task breakdown API.");
+                    throw new Error("AI returned an empty response.");
                 }
                 
             } catch (error) {
-                console.error("Error breaking down task:", error);
-                showToast(`Could not break down task: ${error.message}`, true);
+                console.error("Gemini Task Breakdown Error:", error);
+                showAppAlert("Failed to break down task.");
+                currentSubTasks = []; // Clear on error
             } finally {
-                // Hide loading
-                btn.disabled = false;
-                icon.classList.remove('hidden');
-                spinner.classList.add('hidden');
+                taskBreakdownLoading.classList.add('hidden');
+                breakdownTaskBtn.disabled = false;
             }
-        }
+        };
+
         
-        // -----------------------------------------------------------------
-        // 13. GEMINI API: TEXT-TO-SPEECH (TTS)
-        // -----------------------------------------------------------------
-
-        const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=`; // Key is blank
-        let currentAudio = null; // Store the current Audio object
+        // --- GEMINI TTS (TEXT-TO-SPEECH) FUNCTIONS ---
         
-        /**
-         * Converts the last AI result text to speech and plays it.
-         * @param {string} text - The text to speak.
-         */
-        async function speakResult(text) {
-            const btn = document.getElementById('study-ai-speak-btn');
-            const btnText = document.getElementById('study-ai-speak-btn-text');
-
-            // If audio is already playing, stop it
-            if (currentAudio && !currentAudio.paused) {
-                currentAudio.pause();
-                currentAudio.currentTime = 0;
-                currentAudio = null;
-                btnText.textContent = "Read Aloud";
-                return;
-            }
-            
-            btn.disabled = true;
-            btnText.textContent = "Loading...";
-
-            try {
-                const payload = {
-                    contents: [{
-                        parts: [{ text: `Say clearly and informatively: ${text}` }]
-                    }],
-                    generationConfig: {
-                        responseModalities: ["AUDIO"],
-                        speechConfig: {
-                            voiceConfig: {
-                                // Using "Kore" for a firm, clear voice
-                                prebuiltVoiceConfig: { voiceName: "Kore" }
-                            }
-                        }
-                    },
-                    model: "gemini-2.5-flash-preview-tts"
-                };
-
-                const response = await fetch(TTS_API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                
-                if (!response.ok) throw new Error(`TTS API Error: ${response.status}`);
-                
-                const result = await response.json();
-                const part = result?.candidates?.[0]?.content?.parts?.[0];
-                const audioData = part?.inlineData?.data;
-                const mimeType = part?.inlineData?.mimeType;
-
-                if (audioData && mimeType && mimeType.startsWith("audio/L16")) {
-                    const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
-                    const pcmData = base64ToArrayBuffer(audioData);
-                    const pcm16 = new Int16Array(pcmData);
-                    const wavBlob = pcmToWav(pcm16, sampleRate);
-                    const audioUrl = URL.createObjectURL(wavBlob);
-                    
-                    currentAudio = new Audio(audioUrl);
-                    currentAudio.play();
-                    
-                    btnText.textContent = "Stop";
-                    btn.disabled = false;
-                    
-                    currentAudio.onended = () => {
-                        btnText.textContent = "Read Aloud";
-                        currentAudio = null;
-                    };
-                    
-                } else {
-                    throw new Error("Invalid audio data in response.");
-                }
-
-            } catch (error) {
-                console.error("Error in text-to-speech:", error);
-                showToast(`Could not play audio: ${error.message}`, true);
-                btnText.textContent = "Read Aloud";
-                btn.disabled = false;
-            }
-        }
-        
-        // -----------------------------------------------------------------
-        // 14. HELPER UTILITIES
-        // -----------------------------------------------------------------
+        // This Audio object will be used to play the TTS sound
+        let ttsAudio = new Audio();
 
         /**
          * Converts a Base64 string to an ArrayBuffer.
-         * @param {string} base64 - The Base64 string.
+         * @param {string} base64 - The Base64 encoded string.
+         * @returns {ArrayBuffer}
          */
-        function base64ToArrayBuffer(base64) {
-            const binaryString = atob(base64);
+        const base64ToArrayBuffer = (base64) => {
+            const binaryString = window.atob(base64);
             const len = binaryString.length;
             const bytes = new Uint8Array(len);
             for (let i = 0; i < len; i++) {
                 bytes[i] = binaryString.charCodeAt(i);
             }
             return bytes.buffer;
-        }
-
+        };
+        
         /**
-         * Converts raw PCM16 audio data to a WAV file Blob.
-         * @param {Int16Array} pcmData - The raw audio data.
-         * @param {number} sampleRate - The sample rate (e.g., 24000).
+         * Converts raw PCM audio data to a WAV file Blob.
+         * @param {Int16Array} pcmData - The raw 16-bit PCM audio data.
+         * @param {number} sampleRate - The sample rate of the audio (e.g., 24000).
+         * @returns {Blob} - A Blob object representing the WAV file.
          */
-        function pcmToWav(pcmData, sampleRate) {
+        const pcmToWav = (pcmData, sampleRate) => {
             const numChannels = 1;
-            const bitsPerSample = 16;
-            const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
-            const blockAlign = numChannels * (bitsPerSample / 8);
-            const dataSize = pcmData.length * (bitsPerSample / 8);
-            const fileSize = 36 + dataSize;
-            
-            const buffer = new ArrayBuffer(fileSize + 8); // +8 for RIFF and WAVE
+            const bytesPerSample = 2; // 16-bit
+            const blockAlign = numChannels * bytesPerSample;
+            const byteRate = sampleRate * blockAlign;
+            const dataSize = pcmData.length * bytesPerSample;
+            const buffer = new ArrayBuffer(44 + dataSize);
             const view = new DataView(buffer);
-            
+
             // RIFF header
-            writeString(view, 0, 'RIFF');
-            view.setUint32(4, fileSize, true);
-            writeString(view, 8, 'WAVE');
-            
-            // fmt sub-chunk
-            writeString(view, 12, 'fmt ');
+            view.setUint32(0, 0x52494646, false); // "RIFF"
+            view.setUint32(4, 36 + dataSize, true);
+            view.setUint32(8, 0x57415645, false); // "WAVE"
+            // "fmt " sub-chunk
+            view.setUint32(12, 0x666d7420, false); // "fmt "
             view.setUint32(16, 16, true); // Sub-chunk size (16 for PCM)
             view.setUint16(20, 1, true); // Audio format (1 for PCM)
             view.setUint16(22, numChannels, true);
             view.setUint32(24, sampleRate, true);
             view.setUint32(28, byteRate, true);
             view.setUint16(32, blockAlign, true);
-            view.setUint16(34, bitsPerSample, true);
-            
-            // data sub-chunk
-            writeString(view, 36, 'data');
+            view.setUint16(34, 16, true); // Bits per sample
+            // "data" sub-chunk
+            view.setUint32(36, 0x64617461, false); // "data"
             view.setUint32(40, dataSize, true);
-            
+
             // Write PCM data
-            let offset = 44;
-            for (let i = 0; i < pcmData.length; i++, offset += 2) {
-                view.setInt16(offset, pcmData[i], true);
+            for (let i = 0; i < pcmData.length; i++) {
+                view.setInt16(44 + i * 2, pcmData[i], true);
             }
+
+            return new Blob([view], { type: 'audio/wav' });
+        };
+
+
+        /**
+         * Calls the Gemini TTS API to speak the last AI result.
+         */
+        const speakResult = async () => {
+            if (!lastStudyAiResult) return;
             
-            return new Blob([buffer], { type: 'audio/wav' });
-        }
-
-        /**
-         * Helper to write a string to a DataView.
-         * @param {DataView} view - The DataView.
-         * @param {number} offset - The offset to write at.
-         * @param {string} string - The string to write.
-         */
-        function writeString(view, offset, string) {
-            for (let i = 0; i < string.length; i++) {
-                view.setUint8(offset + i, string.charCodeAt(i));
+            // Stop any currently playing audio
+            if (!ttsAudio.paused) {
+                ttsAudio.pause();
+                ttsAudio.currentTime = 0;
             }
-        }
+
+            studyAiSpeakBtnText.textContent = 'Loading...';
+            studyAiSpeakBtnSpinner.classList.remove('hidden');
+            studyAiSpeakBtn.disabled = true;
+
+            try {
+                const payload = {
+                    contents: [{
+                        parts: [{ text: `Say this clearly: ${lastStudyAiResult}` }]
+                    }],
+                    generationConfig: {
+                        responseModalities: ["AUDIO"],
+                        speechConfig: {
+                            voiceConfig: {
+                                prebuiltVoiceConfig: { voiceName: "Kore" } // A firm, clear voice
+                            }
+                        }
+                    },
+                    model: GEMINI_TTS_MODEL
+                };
+
+                // Use the *streaming* endpoint for TTS
+                const apiUrl = `${GEMINI_API_URL}/${GEMINI_TTS_MODEL}:streamGenerateContent?key=${GEMINI_API_KEY}&alt=sse`;
+                
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`TTS API Error: ${response.status} ${response.statusText}`);
+                }
+                
+                // The TTS API returns a stream (SSE)
+                // We need to read it and assemble the audio data
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let fullAudioData = "";
+                let sampleRate = 24000; // Default, but should be set from response
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value, { stream: true });
+                    // SSE data comes in "data: { ... }" chunks
+                    const lines = chunk.split('\n');
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const jsonStr = line.substring(6);
+                            try {
+                                const data = JSON.parse(jsonStr);
+                                if (data.candidates && data.candidates[0].content.parts[0].inlineData) {
+                                    const part = data.candidates[0].content.parts[0];
+                                    fullAudioData += part.inlineData.data;
+                                    // Get sample rate from the *first* audio chunk
+                                    if (part.inlineData.mimeType.includes("rate=")) {
+                                        sampleRate = parseInt(part.inlineData.mimeType.match(/rate=(\d+)/)[1], 10);
+                                    }
+                                }
+                            } catch (e) {
+                                // Ignore parsing errors on incomplete chunks
+                            }
+                        }
+                    }
+                }
+                
+                if (fullAudioData) {
+                    // We have the full base64 audio data, now process it
+                    const pcmData = base64ToArrayBuffer(fullAudioData);
+                    const pcm16 = new Int16Array(pcmData);
+                    const wavBlob = pcmToWav(pcm16, sampleRate);
+                    const audioUrl = URL.createObjectURL(wavBlob);
+                    
+                    ttsAudio.src = audioUrl;
+                    ttsAudio.play();
+                    
+                    // Reset button when audio finishes
+                    ttsAudio.onended = () => {
+                        studyAiSpeakBtnText.textContent = 'Read Aloud';
+                        studyAiSpeakBtnSpinner.classList.add('hidden');
+                        studyAiSpeakBtn.disabled = false;
+                        URL.revokeObjectURL(audioUrl); // Clean up
+                    };
+                    
+                } else {
+                    throw new Error("No audio data received from TTS API.");
+                }
+                
+            } catch (error) {
+                console.error("Gemini TTS Error:", error);
+                showAppAlert("Failed to generate audio.");
+                studyAiSpeakBtnText.textContent = 'Read Aloud';
+                studyAiSpeakBtnSpinner.classList.add('hidden');
+                studyAiSpeakBtn.disabled = false;
+            }
+        };
+        
+
+        // --- EVENT LISTENERS ---
+
+        /**
+         * Attaches all primary event listeners for the application.
+         */
+        const attachEventListeners = () => {
+            // Modal Triggers
+            showFolderModalBtn.addEventListener('click', () => showModal('create-folder-modal'));
+            showReminderModalBtn.addEventListener('click', () => {
+                resetReminderModal();
+                showModal('add-reminder-modal');
+            });
+            
+            // "Quick Import" button from the main folder view
+            showQuickImportModalBtn.addEventListener('click', () => showImportModal(null));
+            
+            // "Import File" button from *inside* a folder
+            showImportModalFromFileViewBtn.addEventListener('click', () => {
+                // Pass the currentFolderId so the modal knows its context
+                showImportModal(currentFolderId);
+            });
+
+            // Modal Actions
+            createFolderBtn.addEventListener('click', handleCreateFolder);
+            setAlarmBtn.addEventListener('click', handleSetAlarm);
+            saveFileBtn.addEventListener('click', handleSaveFile);
+
+            // File View Navigation
+            backToFoldersBtn.addEventListener('click', () => switchFileView('folders'));
+            
+            // Import File Modal Listeners
+            fileImportInput.addEventListener('change', handleFileSelection);
+            analyzeFileContentBtn.addEventListener('click', handleAnalyzeFileContent);
+
+            // Study AI Listeners
+            studyAiAskBtn.addEventListener('click', handleStudyQuery);
+            studyAiImageInput.addEventListener('change', handleStudyAiImageSelect);
+            studyAiSpeakBtn.addEventListener('click', speakResult);
+
+            // Reminder Modal Listeners
+            breakdownTaskBtn.addEventListener('click', handleTaskBreakdown);
+
+            // Alarm Notification
+            dismissAlarmBtn.addEventListener('click', () => {
+                alarmNotificationModal.classList.add('hidden');
+            });
+        };
+
+        // --- PWA SERVICE WORKER REGISTRATION ---
         
         /**
-         * Sanitizes text to prevent HTML injection.
-         * @param {string} str - The string to sanitize.
+         * Registers the Service Worker for PWA functionality.
          */
-        function escapeHTML(str) {
-            if (!str) return '';
-            return str.replace(/[&<>"']/g, function(m) {
-                return {
-                    '&': '&amp;',
-                    '<': '&lt;',
-                    '>': '&gt;',
-                    '"': '&quot;',
-                    "'": '&#39;'
-                }[m];
-            });
-        }
-        
-        // -----------------------------------------------------------------
-        // 15. PWA SERVICE WORKER REGISTRATION
-        // -----------------------------------------------------------------
-        
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js') // FIX: Changed from './sw.js'
-                    .then(registration => {
-                        console.log('PWA Service Worker registered with scope:', registration.scope);
-                    })
-                    .catch(error => {
-                        console.error('Service Worker registration failed:', error);
-                    });
-            });
-        }
-
-    </script>
-</body>
-</html>
+        const registerServiceWorker = () => {
+            // Register the Service Worker for PWA offline capabilities
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('sw.js') // Use root-relative path
+                        .then(registration => {
+                            console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                        })
 
